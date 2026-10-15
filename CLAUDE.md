@@ -16,7 +16,7 @@ The full roadmap is in `docs/PLAN.md`. The step-by-step build plan is in `docs/I
 - Dry run + 3D viewer: `camcore-verify out/sign.ngc --machine examples/machine.json --tools examples/tools.json --view out/sign_view.html`
 - Rotary dry run: add `--stock examples/stock_cylinder.json`
 - Tool table for the sim: `python -m camcore.tooltable examples/tools.json sim/config/tool.tbl`
-- LinuxCNC sim: `cd sim && docker build -t camcore-sim . && docker run --rm -v "$PWD/../out:/work" camcore-sim check /work/sign.ngc`. The image has never been built yet; see `sim/README.md`.
+- LinuxCNC sim: `cd sim && docker build -t camcore-sim . && docker run --rm -v "$PWD/../out:/work" camcore-sim check /work/sign.ngc` (exit 0 = LinuxCNC ran it all; about 1 min per example). Verified with LinuxCNC 2.9.4, see `sim/README.md`.
 - Sim GUI: `docker run --rm -p 6080:6080 -v "$PWD/out:/work" camcore-sim gui /work/wrap.ngc`, then open http://localhost:6080/vnc.html
 
 `out/` is gitignored scratch output. `examples/*.ngc` are committed fixtures: `tests/test_verify.py::test_examples_verify_clean` replays them. After any post or op change that alters output, regenerate `examples/sign.ngc` and `examples/wrap.ngc` from their job files and confirm they still verify clean.
@@ -31,7 +31,7 @@ Pipeline: JSON job → `job.run_job` → list of `Toolpath` (IR) → `post.get_p
 - `camcore/ops/rotary.py`: wrap = Y becomes A (deg = Y / r), Z0 is on the rotary centreline, so cutting Z = radius + depth.
 - `camcore/verify.py`: independent G-code replay with machine + stock model (heightmap for box stock, radius map over (X, A) for cylinder stock). It parses G-code text and must never import ops or posts, so it stays an independent check of their output. `verify_cli.py` is its CLI.
 - `camcore/viewer.py` + `viewer_template.html`: self-contained HTML player (vendored three.js r128 in `camcore/vendor/`, shipped as package data).
-- `sim/`: Docker image with Debian's `linuxcnc-uspace`, XYZA sim config in `sim/config/`, headless `run_check.py`. `entrypoint.sh` picks up `/work/tool.tbl` and `/work/machine.ini` if they are mounted.
+- `sim/`: Docker image with Debian trixie's `linuxcnc-uspace` (2.9.4, non-setuid `rtapi_app`), XYZA sim config in `sim/config/`, headless `run_check.py`. `entrypoint.sh` picks up `/work/tool.tbl` and `/work/machine.ini` if they are mounted.
 
 ## Conventions
 - Units: mm and degrees everywhere internally.

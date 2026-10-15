@@ -1,11 +1,20 @@
 # LinuxCNC simulator in a container
 
-Runs your program through real LinuxCNC (2.9, Debian bookworm package) on a simulated
-XYZA machine with an automatic tool changer, so LinuxCNC's own interpreter checks soft
+Runs your program through real LinuxCNC (2.9.4, Debian trixie package `1:2.9.4-2+deb13u1`) on a
+simulated XYZA machine with an automatic tool changer, so LinuxCNC's own interpreter checks soft
 limits, tool numbers and G-code rules before anything reaches the real machine.
 
-Status: written but not yet run, because the cloud session that built it cannot reach the Debian
-package servers. First build on your PC may need small fixes.
+## Verified (2026-10-15, LinuxCNC 2.9.4)
+- `examples/sign.ngc` and `examples/wrap.ngc` run to the end with exit code 0 (about 55 s and 80 s).
+- A copy of `sign.ngc` with `G0 X1580` (1000 mm past X max) fails:
+  `Linear move on line 13 would exceed X's positive limit`.
+- A copy with `T99 M6` fails: `Requested tool 99 not found in the tool table`.
+
+Fixes it needed on first build: Debian trixie instead of bookworm (bookworm only has a 2.9.0~pre1
+snapshot), setuid bit removed from `rtapi_app` (Docker drops `CAP_IPC_OWNER`, so the root
+`rtapi_app` could not open HAL shared memory), `EMCIO = io` in the INI (without it E-stop reset
+never completes), and `run_check.py` waits for LinuxCNC from child processes before importing
+`linuxcnc`.
 
 ## Build once
 ```bash

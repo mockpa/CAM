@@ -5,21 +5,26 @@ LinuxCNC itself enforces soft limits, tool table lookups, G-code syntax and
 modal rules, so this catches what camcore's own checker might miss. Feed and
 rapid overrides are raised so long programs finish quickly.
 """
+import subprocess
 import sys
 import time
 
-import linuxcnc
-
 prog = sys.argv[1]
-s, c, e = linuxcnc.stat(), linuxcnc.command(), linuxcnc.error_channel()
-
-for _ in range(120):                         # wait for LinuxCNC to come up
-    try:
-        s.poll(); break
-    except linuxcnc.error:
-        time.sleep(0.5)
+# Wait for LinuxCNC to come up. The linuxcnc module attaches to the tool table
+# mmap once per process; if that happens before LinuxCNC is up, every later
+# stat.poll() fails. So probe from child processes and import it only after.
+PROBE = "import linuxcnc; linuxcnc.stat().poll()"
+for _ in range(120):
+    if subprocess.run([sys.executable, "-c", PROBE], capture_output=True).returncode == 0:
+        break
+    time.sleep(0.5)
 else:
     sys.exit("LinuxCNC did not start, see /tmp/linuxcnc.log")
+
+import linuxcnc  # noqa: E402
+
+s = linuxcnc.stat()
+c, e = linuxcnc.command(), linuxcnc.error_channel()
 
 
 def wait(cond, timeout=30):
@@ -32,11 +37,19 @@ def wait(cond, timeout=30):
     return False
 
 
-c.state(linuxcnc.STATE_ESTOP_RESET); c.state(linuxcnc.STATE_ON)
-wait(lambda: s.task_state == linuxcnc.STATE_ON)
-c.teleop_enable(False); c.mode(linuxcnc.MODE_MANUAL); c.wait_complete()
+def step(what, cond, timeout=30):
+    if not wait(cond, timeout):
+        sys.exit(f"LinuxCNC setup failed: {what}")
+
+
+c.state(linuxcnc.STATE_ESTOP_RESET); c.wait_complete()
+step("estop reset", lambda: s.task_state == linuxcnc.STATE_ESTOP_RESET)
+c.state(linuxcnc.STATE_ON); c.wait_complete()
+step("machine on", lambda: s.task_state == linuxcnc.STATE_ON)
+c.mode(linuxcnc.MODE_MANUAL); c.wait_complete()
+c.teleop_enable(False); c.wait_complete()
 c.home(-1); c.wait_complete()
-wait(lambda: all(s.homed[j] for j in range(s.joints)), 60)
+step("homing", lambda: all(s.homed[j] for j in range(s.joints)), 60)
 c.mode(linuxcnc.MODE_AUTO); c.wait_complete()
 c.program_open(prog); c.wait_complete()
 c.feedrate(50.0)                             # 5000 %, capped by MAX_FEED_OVERRIDE

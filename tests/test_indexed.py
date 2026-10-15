@@ -25,8 +25,9 @@ TOOLS = {1: {"diameter": 6, "kind": "flat", "flute_length": 30, "center_cutting"
 
 
 def machine(tools=TOOLS):
+    # G53 Z0, where tool changes happen, is 100 mm above the rotary axis
     return Machine(travel={"x": [-500, 500], "y": [-500, 500], "z": [-500, 500]},
-                   work_offset={"x": 0, "y": 0, "z": 0}, has_a=True, tools=tools)
+                   work_offset={"x": 0, "y": 0, "z": -100}, has_a=True, tools=tools)
 
 
 def errors(issues):
@@ -93,10 +94,11 @@ def drill_job(**op):
 
 
 def test_indexed_drill_gcode_is_pinned():
-    # bar 20 x 20: corner radius 14.1421, clearance 5 -> turn A at Z19.1421; face top 10
+    # bar 20 x 20: corner radius 14.1421, clearance 5 -> turn A at Z19.1421; face top 10.
+    # After the tool change it goes to the first X Y and A at the G53 Z0 height.
     gcode = job_post(drill_job(index=[90])).emit(run_job(drill_job(index=[90])))
     assert gcode.splitlines()[4:-4] == [
-        "(drill A90)", "M5", "G53 G0 Z0", "T1 M6 (d3 D3)", "G43 H1", "M3 S12000",
+        "(drill A90)", "M5", "G53 G0 Z0", "T1 M6 (d3 D3)", "G43 H1", "M3 S12000", "G0 X10 Y3 A90",
         "G0 Z19.1421", "G0 A90", "G0 Z15", "G0 X10 Y3", "G0 Z11", "G1 Z8 F200",
         "G0 Z11", "G0 Z15", "G0 Z19.1421"]
     assert "G93" not in gcode
@@ -110,7 +112,7 @@ def test_face_z_and_clearance_override():
     job = drill_job(index=[0], face_z=12)               # the op's own safe Z (17) is higher still
     job["index_clearance"] = 2
     lines = job_post(job).emit(run_job(job)).splitlines()
-    assert lines[10:12] == ["G0 Z17", "G0 A0"]
+    assert lines[11:13] == ["G0 Z17", "G0 A0"]
 
 
 def test_indexed_pocket_keeps_arcs_in_g94():

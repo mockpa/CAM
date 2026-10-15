@@ -2,7 +2,7 @@
   "post": "linuxcnc",
   "tool_library": "tools.json",
   "material": "hardwood",
-  "stock": {"type": "cylinder", "diameter": 30, "x": [-10, 50]},
+  "stock": {"type": "cylinder", "diameter": 30, "x": [-45, 50], "chuck_hold": 10},
   "models": {"pawn": {"file": "pawn.stl"}},
   "defaults": {"safe_z": 5.0},
   "operations": [

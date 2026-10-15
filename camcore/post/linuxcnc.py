@@ -51,7 +51,8 @@ class LinuxCncPost(PostProcessor):
 
     def tool_change(self, tp: Toolpath) -> list[str]:
         out = [f"({tp.name})"]
-        if tp.tool != self._last_tool:
+        changed = tp.tool != self._last_tool
+        if changed:
             n = self.tool_number(tp.tool)
             out += ["M5", "G53 G0 Z0", f"T{n} M6 ({tp.tool.name} D{self.fmt(tp.tool.diameter)})", f"G43 H{n}"]
             self._last_tool = tp.tool
@@ -61,7 +62,21 @@ class LinuxCncPost(PostProcessor):
         if self._upcoming:
             self._upcoming.pop(0)
         out.append(f"M3 S{int(tp.spindle_rpm)}")
-        return out
+        return out + (self._position(tp) if changed else [])
+
+    def _position(self, tp: Toolpath) -> list[str]:
+        """After M6 the spindle is wherever the tool change left it: go to the path's
+        first X Y (Y0 for wrapped paths, which never name Y) and A while still at the
+        G53 Z0 height, so the first Z move comes down where the program expects."""
+        first = {}
+        for m in tp.moves:
+            for k in "xya":
+                if k not in first and getattr(m, k) is not None:
+                    first[k] = getattr(m, k)
+        if "x" not in first:
+            return []
+        first.setdefault("y", 0.0)
+        return ["G0 " + " ".join(f"{k.upper()}{self.fmt(first[k])}" for k in "xya" if k in first)]
 
     def emit(self, paths):
         self._numbers, self._last_tool = {}, None

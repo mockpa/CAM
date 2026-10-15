@@ -38,7 +38,7 @@ def quarter(n=24, r=10.0, z=-1.0):
 
 def test_quarter_circle_becomes_one_arc_pinned():
     assert body(get_post("linuxcnc").emit([quarter()])) == [
-        "G0 Z5", "G0 X10 Y0", "G1 Z-1 F300", "G3 X0 Y10 I-10 J0 F600", "G0 Z5"]
+        "G0 X10 Y0", "G0 Z5", "G0 X10 Y0", "G1 Z-1 F300", "G3 X0 Y10 I-10 J0 F600", "G0 Z5"]
     rev = Toolpath("r", EM)                                  # same points, the other way round
     rev.rapid(z=5); rev.rapid(x=0, y=10); rev.feed(z=-1, f=300)
     for k in range(23, -1, -1):
@@ -46,7 +46,7 @@ def test_quarter_circle_becomes_one_arc_pinned():
         rev.feed(x=10 * math.cos(a), y=10 * math.sin(a), f=600)
     rev.rapid(z=5)
     assert body(get_post("linuxcnc").emit([rev])) == [
-        "G0 Z5", "G0 X0 Y10", "G1 Z-1 F300", "G2 X10 Y0 I0 J-10 F600", "G0 Z5"]
+        "G0 X0 Y10", "G0 Z5", "G0 X0 Y10", "G1 Z-1 F300", "G2 X10 Y0 I0 J-10 F600", "G0 Z5"]
 
 
 def test_linear_option_and_rotary_stay_g1():

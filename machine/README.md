@@ -14,6 +14,24 @@ from the build plan, not from a running machine:
 
 `a_max_diameter` limits the stock diameter in `camcore rotary-wizard`; verify does not check it yet.
 
+`"body"` describes the machine body for the collision check in camcore-verify and for the sim
+GUI's vismach model (format in `camcore/body.py`). All of it is provisional, in tool-tip machine
+coordinates (G54 Z -120 with 18 mm stock puts the spoilboard at Z -138):
+
+- spindle, relative to the spindle nose: ER20 collet nut (32 mm, 16 below the nose), shaft,
+  G-Penny housing (80 mm, from 30 to 250 above the nose), Z plate (160 wide, behind the spindle)
+- gantry beam (120 x 80 tube), its bottom 168 mm above the spoilboard, 65..145 mm behind the tool axis
+- spoilboard (the tool may cut into it, the spindle may not), ATC rack at the back edge
+  (X 700..1000), tool setter at X 660
+- rotary unit, only on the table for rotary jobs: 100 mm chuck and headstock, jaw face at
+  X 180, axis at Y 400, Z -63 (75 mm above the spoilboard). A rotary job's G54 comes from this
+  and the stock's `"chuck_hold"`: Y0 Z0 on the axis, the jaw face at stock X start + hold.
+
+Each tool needs `"gauge_length"` (spindle nose to tip) in the library; without it the check
+assumes `default_tool_length` and warns. Measure all of it once the machine stands. Open point
+from the build plan: with the axis 75 mm above the spoilboard, a tool tip can only reach about 63
+mm above the axis (Z travel), so the planned 150 mm swing does not fit yet.
+
 | File | Used by |
 |---|---|
 | `printnc_provisional.json` | `camcore-verify --machine` |

@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from .body import Body, jaw_reach
 from .check import DEFAULT_MACHINE, check
 from .job import build_model
 
@@ -30,7 +31,8 @@ DEFAULT_LIBRARY = Path(__file__).resolve().parent.parent / "examples" / "tools.j
 
 STOCK_MARGIN = 2.0     # mm of stock around the model's largest radius, per side
 FREE_END = 2.0         # mm of stock beyond the model's far end
-JAW_CLEARANCE = 2.0    # mm between the chuck jaws and the closest a tool can reach
+JAW_CLEARANCE = 2.0    # mm between the chuck jaws and the closest the tool (or, on a machine
+                       # with a "body", the spindle) can reach
 
 # rough grid, stock left for finishing, finish grid, scallop height (ball) or stepover ratio (flat)
 PRESETS = {
@@ -108,19 +110,31 @@ def suggest_length(length: float, hold: float, reach: float) -> float:
     return math.ceil(length + FREE_END) + hold + math.ceil(reach + JAW_CLEARANCE)
 
 
+def reach(a: dict, lib: dict, mdata: dict) -> float:
+    """How far below X0 something reaches that must keep JAW_CLEARANCE from the jaws: the
+    tools' radius, or on a machine with a rotary unit in its "body" the spindle with the
+    tip on the axis (body.jaw_reach), with each tool's gauge length."""
+    tools = [lib[a["rough_tool"]], lib[a["finish_tool"]]]
+    r = max(t["diameter"] for t in tools) / 2
+    if (mdata.get("body") or {}).get("rotary"):
+        b = Body(mdata["body"])
+        r = max([r] + [jaw_reach(b, t.get("gauge_length", b.default_tool_length), t["diameter"]) for t in tools])
+    return r
+
+
 def build_job(stl: Path, out_dir: Path, a: dict, lib: dict, library_path: Path, machine_path: Path | None,
-              length: float) -> dict:
+              length: float, mdata: dict | None = None) -> dict:
     """The job for the answers `a` (see run()); paths are relative to out_dir, where it is written."""
     rel = lambda p: portable(Path(p), out_dir)
     preset = PRESETS[a["preset"]]
-    rough_r, finish_r = lib[a["rough_tool"]]["diameter"] / 2, lib[a["finish_tool"]]["diameter"] / 2
-    x0, end = layout(length, a["stock_length"], a["hold"], max(rough_r, finish_r))
+    finish_r = lib[a["finish_tool"]]["diameter"] / 2
+    x0, end = layout(length, a["stock_length"], a["hold"], reach(a, lib, mdata or {}))
     name = stl.stem
     job = {
         "post": "linuxcnc",
         "tool_library": rel(library_path),
         "material": a["material"],
-        "stock": {"type": "cylinder", "diameter": a["stock_diameter"], "x": [x0, end]},
+        "stock": {"type": "cylinder", "diameter": a["stock_diameter"], "x": [x0, end], "chuck_hold": a["hold"]},
         "models": {name: model_spec(rel(stl), a)},
         "defaults": {"safe_z": 5.0},
         "operations": [
@@ -244,7 +258,7 @@ class Session:
                       and self.a["material"] in t.get("cutting", {}))
 
     def reach(self) -> float:
-        return max(self.lib[self.a["rough_tool"]]["diameter"], self.lib[self.a["finish_tool"]]["diameter"]) / 2
+        return reach(self.a, self.lib, self.mdata)
 
     def shortest_flutes(self) -> tuple[str, float]:
         short = min((self.a["rough_tool"], self.a["finish_tool"]), key=lambda k: self.lib[k].get("flute_length", 20.0))
@@ -318,7 +332,7 @@ QUESTIONS = [
 def write_job(s: Session, out: Path, library_path: Path, machine_path: Path | None) -> Path:
     """Write the job for a fully answered session to OUT/NAME_job.json."""
     out.mkdir(parents=True, exist_ok=True)
-    job = build_job(s.stl, out, s.a, s.lib, library_path, machine_path, s.placed()[0])
+    job = build_job(s.stl, out, s.a, s.lib, library_path, machine_path, s.placed()[0], s.mdata)
     job_path = out / f"{s.stl.stem}_job.json"
     job_path.write_text(json.dumps(job, indent=2) + "\n")
     return job_path

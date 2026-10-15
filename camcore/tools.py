@@ -15,6 +15,7 @@ class Tool:
     number: int | None = None   # tool table number on the controller
     center_cutting: bool = False  # may plunge straight down (only where an op allows it)
     corner_radius: float = 0.0  # bull nose only: radius of the rounded corner, 0 < corner_radius <= radius
+    gauge_length: float | None = None  # spindle nose to tip, for the machine body check in verify
 
     def __post_init__(self):
         if self.kind == "bull" and not 0 < self.corner_radius <= self.radius:

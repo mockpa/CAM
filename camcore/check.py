@@ -16,6 +16,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from .body import scene
 from .job import load_job, run_job
 from .post import job_post
 from .tooltable import to_tbl
@@ -41,8 +42,17 @@ def sim_var(work_offset: dict) -> str:
     return "".join(f"{k}\t{v:.6f}\n" for k, v in vals.items())
 
 
-def run_sim(gcode: str, mdata: dict, machine_path: Path, library: dict, image: str) -> tuple[bool, str]:
-    """Run the program through LinuxCNC in the sim container. Returns (ok, log)."""
+def sim_tool_table(mdata: dict, machine_path: Path, library: dict) -> str:
+    """The controller's real tool.tbl if the machine names one (as on the machine), else one from the library."""
+    if mdata.get("tool_table"):
+        return (machine_path.parent / mdata["tool_table"]).read_text()
+    return to_tbl(library)
+
+
+def run_sim(gcode: str, mdata: dict, machine_path: Path, library: dict, image: str,
+            work_offset: dict | None = None) -> tuple[bool, str]:
+    """Run the program through LinuxCNC in the sim container, with G54 at `work_offset`
+    (default: the machine JSON's). Returns (ok, log)."""
     if shutil.which("docker") is None:
         return False, "docker not found (install it, or use --no-sim for a quick iteration)"
     sim = mdata.get("sim")
@@ -53,11 +63,8 @@ def run_sim(gcode: str, mdata: dict, machine_path: Path, library: dict, image: s
         work.chmod(0o755)                     # the container user must be able to read it
         (work / "program.ngc").write_text(gcode)
         shutil.copy(machine_path.parent / sim["ini"], work / "machine.ini")
-        (work / "machine.var").write_text(sim_var(mdata["work_offset"]))
-        if mdata.get("tool_table"):           # the controller's real table, as on the machine
-            shutil.copy(machine_path.parent / mdata["tool_table"], work / "tool.tbl")
-        else:
-            (work / "tool.tbl").write_text(to_tbl(library))
+        (work / "machine.var").write_text(sim_var(work_offset or mdata["work_offset"]))
+        (work / "tool.tbl").write_text(sim_tool_table(mdata, machine_path, library))
         try:
             p = subprocess.run(["docker", "run", "--rm", "-v", f"{work}:/work", image,
                                 "check", "/work/program.ngc"],
@@ -77,7 +84,8 @@ def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: s
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     ngc, view, report = out / f"{name}.ngc", out / f"{name}_view.html", out / f"{name}_report.txt"
-    for f in (ngc, view):                     # never leave an older program next to a new report
+    scene_file = out / f"{name}_scene.json"
+    for f in (ngc, view, scene_file):         # never leave an older program next to a new report
         f.unlink(missing_ok=True)
 
     lines = [f"camcore check {job_path}"]
@@ -97,6 +105,7 @@ def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: s
     lines.append(f"machine: {machine_path}")
 
     gcode = motions = stock_sim = issues = None
+    machine = machine_from_library(Machine.load(machine_path), library)
     try:
         paths = run_job(job, base)
         gcode = job_post(job).emit(paths)
@@ -108,7 +117,6 @@ def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: s
     if gcode is not None and stock is None:
         fail("the job has no \"stock\"; camcore-verify needs it to find crashes")
     if gcode is not None and stock is not None:
-        machine = machine_from_library(Machine.load(machine_path), library)
         issues, motions, stock_sim = run(gcode, machine, stock)
         errors = [i for i in issues if i.level == "error"]
         lines.append(f"verify: {len(motions)} moves, {len(errors)} errors, {len(issues) - len(errors)} warnings")
@@ -118,7 +126,7 @@ def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: s
 
     if ok and sim:
         log("running the LinuxCNC sim (a few minutes for ~10000 moves)...")
-        sim_ok, sim_log = run_sim(gcode, mdata, machine_path, library, image)
+        sim_ok, sim_log = run_sim(gcode, mdata, machine_path, library, image, machine.offset_for(stock))
         lines.append("LinuxCNC sim: " + ("OK" if sim_ok else "FAILED"))
         lines += [f"  {s}" for s in sim_log.splitlines()]
         if not sim_ok:
@@ -129,6 +137,14 @@ def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: s
     if ok:
         from .viewer import write_viewer
         write_viewer(view, motions, machine, stock, stock_sim, issues, title=ngc.name, program_text=gcode)
+        if machine.body is not None:           # the sim GUI's vismach model (sim/camcore_vismach.py)
+            offset = machine.offset_for(stock)
+            data = scene(machine.body, offset, stock, machine.tools)
+            if mdata.get("sim", {}).get("ini"):   # so the GUI runs the same LinuxCNC setup as the check
+                data["sim"] = {"ini": (machine_path.parent / mdata["sim"]["ini"]).read_text(),
+                               "var": sim_var(offset), "tool_tbl": sim_tool_table(mdata, machine_path, library)}
+            scene_file.write_text(json.dumps(data))
+            lines.append(f"wrote {scene_file}")
         ngc.write_text(gcode)                 # last: the .ngc only exists if everything above passed
         lines += [f"wrote {ngc}", f"wrote {view}"]
         lines.append("PASSED" if sim else "PASSED WITHOUT SIM")

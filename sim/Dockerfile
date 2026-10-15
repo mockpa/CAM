@@ -11,8 +11,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 # HAL shared memory that user cnc creates. The sim doesn't need realtime anyway.
 RUN chmod u-s /usr/bin/rtapi_app && useradd -m cnc
 COPY config/ /home/cnc/sim/
-COPY run_check.py entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/run_check.py && chown -R cnc /home/cnc/sim
+COPY run_check.py entrypoint.sh camcore_vismach.py /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/run_check.py /usr/local/bin/camcore_vismach.py \
+    && chown -R cnc /home/cnc/sim
 USER cnc
 WORKDIR /home/cnc/sim
 EXPOSE 6080

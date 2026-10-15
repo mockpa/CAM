@@ -2,7 +2,7 @@
   "post": "linuxcnc",
   "tool_library": "tools.json",
   "material": "hardwood",
-  "stock": {"type": "bar", "x": [0, 120], "y": [-20, 20], "z": [-20, 20]},
+  "stock": {"type": "bar", "x": [-20, 120], "y": [-20, 20], "z": [-20, 20], "chuck_hold": 15},
   "index": {"sides": 4},
   "tool_order": "minimize_changes",
   "defaults": {"safe_z": 5.0},

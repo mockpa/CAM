@@ -58,7 +58,8 @@ def test_ray_interval_matches_brute_force(t, y):
 
 def test_ring_cut_leaves_exact_radius_and_rapids_see_it():
     # flat D6 cuts a full ring at Z15 (radius 15) around X30
-    ring = "T1 M6\nG43 H1\nM3 S10000\nG0 Z30\nG0 X30 A0\nG1 Z15 F100\nG93\nG1 A360 F1\nG94\nG0 Z30\n"
+    # (up first, then X and Y are set before Z comes down: the tool change leaves them unknown)
+    ring = "T1 M6\nG43 H1\nM3 S10000\nG0 Z30\nG0 X30 Y0 A0\nG1 Z15 F100\nG93\nG1 A360 F1\nG94\nG0 Z30\n"
     issues, _, sim = run(ring, machine(), CYL)
     assert [str(i) for i in issues if i.level == "error"] == []
     ix = int(round((30 - sim.x0) / sim.res))

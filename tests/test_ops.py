@@ -230,7 +230,11 @@ def test_tool_library_and_grouping(tmp_path):
 def test_wrap_example_runs():
     from camcore.job import job_to_gcode
     g = job_to_gcode(Path(__file__).parent.parent / "examples" / "wrap_job.json")
-    assert " A" in g and " Y" not in g
+    lines = g.splitlines()
+    assert " A" in g
+    # Y only in the move to the start after each tool change, and only Y0: the design is in A
+    ys = [k for k, l in enumerate(lines) if " Y" in l]
+    assert ys and all(" Y0 " in lines[k] and lines[k - 1].startswith("M3") for k in ys)
 
 
 def test_profile_ramp_gcode_is_pinned():
@@ -239,6 +243,7 @@ def test_profile_ramp_gcode_is_pinned():
                      ramp_angle=math.degrees(math.atan(0.2)), feed=600, plunge=200)
     g = get_post("linuxcnc").emit([tp]).splitlines()
     assert g[g.index("M3 S18000") + 1:g.index("M5 M9")] == [
+        "G0 X10 Y0",                                                          # to the start, at G53 Z0
         "G0 Z5", "G0 X10 Y0", "G0 Z1", "G1 Z0 F200",
         "G1 X5 Z-1 F600", "G1 X0", "G1 Y10", "G1 X10", "G1 Y0", "G1 X5",     # ramp, full loop at -1
         "G1 X0 Z-2", "G1 Y10", "G1 X10", "G1 Y0", "G1 X0",                   # ramp on, full loop at -2

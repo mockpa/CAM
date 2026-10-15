@@ -25,8 +25,9 @@ STOCK = {"type": "cylinder", "diameter": 22, "x": [-2, 20]}
 def machine():
     tools = {t.number: {"diameter": t.diameter, "kind": t.kind, "flute_length": t.flute_length,
                         "center_cutting": t.center_cutting} for t in (EM6, BALL3)}
+    # G53 Z0, where tool changes happen, is 100 mm above the rotary axis
     return Machine(travel={"x": [-500, 500], "y": [-500, 500], "z": [-500, 500]},
-                   work_offset={"x": 0, "y": 0, "z": 0}, has_a=True, tools=tools)
+                   work_offset={"x": 0, "y": 0, "z": -100}, has_a=True, tools=tools)
 
 
 @pytest.fixture(scope="module")

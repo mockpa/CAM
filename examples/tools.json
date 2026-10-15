@@ -1,5 +1,5 @@
 {
-  "em3": {"number": 1, "diameter": 3.175, "kind": "flat", "flute_length": 12, "center_cutting": true,
+  "em3": {"number": 1, "diameter": 3.175, "gauge_length": 35, "kind": "flat", "flute_length": 12, "center_cutting": true,
     "cutting": {
       "aluminium": {"rpm": 18000, "feed": 600, "plunge": 150, "step_down": 0.5, "stepover_ratio": 0.35, "ramp_angle": 2},
       "hardwood": {"rpm": 18000, "feed": 1500, "plunge": 400, "step_down": 1.5, "stepover_ratio": 0.45, "ramp_angle": 5},
@@ -7,7 +7,7 @@
       "mdf": {"rpm": 18000, "feed": 2000, "plunge": 500, "step_down": 2.0, "stepover_ratio": 0.45, "ramp_angle": 5},
       "acrylic": {"rpm": 16000, "feed": 1200, "plunge": 300, "step_down": 1.0, "stepover_ratio": 0.4, "ramp_angle": 3}
     }},
-  "em6": {"number": 2, "diameter": 6.0, "kind": "flat", "flute_length": 22,
+  "em6": {"number": 2, "diameter": 6.0, "gauge_length": 45, "kind": "flat", "flute_length": 22,
     "cutting": {
       "aluminium": {"rpm": 14000, "feed": 900, "plunge": 200, "step_down": 1.0, "stepover_ratio": 0.35, "ramp_angle": 2},
       "hardwood": {"rpm": 16000, "feed": 2500, "plunge": 600, "step_down": 3.0, "stepover_ratio": 0.45, "ramp_angle": 5},
@@ -15,7 +15,7 @@
       "mdf": {"rpm": 16000, "feed": 3000, "plunge": 700, "step_down": 4.0, "stepover_ratio": 0.45, "ramp_angle": 5},
       "acrylic": {"rpm": 14000, "feed": 1800, "plunge": 400, "step_down": 2.0, "stepover_ratio": 0.4, "ramp_angle": 3}
     }},
-  "ball3": {"number": 3, "diameter": 3.0, "kind": "ball", "flute_length": 12, "center_cutting": true,
+  "ball3": {"number": 3, "diameter": 3.0, "gauge_length": 35, "kind": "ball", "flute_length": 12, "center_cutting": true,
     "cutting": {
       "aluminium": {"rpm": 18000, "feed": 500, "plunge": 150, "step_down": 0.3},
       "hardwood": {"rpm": 18000, "feed": 1200, "plunge": 400, "step_down": 1.0},
@@ -23,7 +23,7 @@
       "mdf": {"rpm": 18000, "feed": 1500, "plunge": 500, "step_down": 1.5},
       "acrylic": {"rpm": 16000, "feed": 1000, "plunge": 300, "step_down": 0.8}
     }},
-  "v60": {"number": 4, "diameter": 12.7, "kind": "vbit", "v_angle": 60, "center_cutting": true,
+  "v60": {"number": 4, "diameter": 12.7, "gauge_length": 40, "kind": "vbit", "v_angle": 60, "center_cutting": true,
     "cutting": {
       "aluminium": {"rpm": 18000, "feed": 400, "plunge": 150},
       "hardwood": {"rpm": 18000, "feed": 1200, "plunge": 400},
@@ -31,7 +31,7 @@
       "mdf": {"rpm": 18000, "feed": 1500, "plunge": 500},
       "acrylic": {"rpm": 16000, "feed": 900, "plunge": 300}
     }},
-  "v90": {"number": 5, "diameter": 12.7, "kind": "vbit", "v_angle": 90, "center_cutting": true,
+  "v90": {"number": 5, "diameter": 12.7, "gauge_length": 40, "kind": "vbit", "v_angle": 90, "center_cutting": true,
     "cutting": {
       "aluminium": {"rpm": 18000, "feed": 400, "plunge": 150},
       "hardwood": {"rpm": 18000, "feed": 1200, "plunge": 400},

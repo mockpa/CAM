@@ -9,6 +9,7 @@ T1 M6 (em3 D3.175)
 G43 H1
 T5 (stage next tool)
 M3 S18000
+G0 X30.2936 Y0 A109.5276
 G93 (inverse-time feed for rotary moves)
 G0 Z25
 G0 X30.2936 A109.5276
@@ -4585,6 +4586,7 @@ G53 G0 Z0
 T5 M6 (v90 D12.7)
 G43 H5
 M3 S18000
+G0 X89.725 Y0 A110.5156
 G93 (inverse-time feed for rotary moves)
 G0 Z25
 G0 X89.725 A110.5156

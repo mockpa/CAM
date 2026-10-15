@@ -35,6 +35,27 @@ docker run --rm -p 6080:6080 -v "$PWD/../examples:/work" camcore-sim gui /work/w
 ```
 Open http://localhost:6080/vnc.html, then use AXIS as normal (F1, F2, Home All, Run).
 
+### With the machine model (vismach)
+`camcore check` writes `NAME_scene.json` next to the program when the machine JSON has a `"body"`
+(the PrintNC profile does). Point the GUI at that output folder:
+```bash
+camcore check examples/pawn_job.json -o out/pawn
+docker run --rm -p 6080:6080 -v "$PWD/out/pawn:/work" camcore-sim gui /work/pawn.ngc
+```
+Next to AXIS, a second window shows the machine: spoilboard, ATC rack and tool setter, the gantry
+beam, the spindle with the tool in it, the rotary unit on rotary jobs, and the stock (turning with
+A). It is drawn by `camcore_vismach.py` from the scene, which is the same geometry camcore-verify
+checked the program against; the scene also carries the INI, G54 and tool table the check used,
+so the GUI runs exactly that setup. Positions come from LinuxCNC's own pins, so it needs no HAL
+changes. A third argument picks another scene: `gui /work/x.ngc /work/other_scene.json`.
+
+Vismach in LinuxCNC 2.9 only draws; it has no collision detection. Collisions with the machine
+body are found by camcore-verify (see `camcore/body.py`) before a program gets here.
+
+Verified (2026-10-15): the pawn scene comes up beside AXIS with G54 X215 Y400 Z-63 from the
+rotary unit; after Home All and MDI `T2 M6`, `G43 H2`, `G0 X0 Y0 A0`, `G0 Z40`, `G0 A45` the
+model shows the spindle and tool above the stock at the chuck.
+
 ## Make it match your machine
 - Copy your real axis limits into `config/camcore_sim.ini` (or mount your own INI as `/work/machine.ini`).
 - Set your G54 work offset in `config/sim.var` (parameters 5221 to 5224 = X, Y, Z, A).

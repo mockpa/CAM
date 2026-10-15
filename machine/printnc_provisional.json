@@ -9,5 +9,27 @@
   "atc_pockets": 6,
   "tool_table": null,
   "sim": {"ini": "printnc_sim.ini"},
-  "stock": {"type": "box", "x": [0, 160], "y": [0, 90], "z": [-18, 0]}
+  "stock": {"type": "box", "x": [0, 160], "y": [0, 90], "z": [-18, 0]},
+  "body": {
+    "_comment": "PROVISIONAL machine body in tool-tip machine coordinates (work + G54; G54 Z -120 with 18 mm stock puts the spoilboard at Z -138). Spindle parts are relative to the spindle nose (G-Penny 2.2 kW, 80 mm; ER20 nut); the gantry beam (120x80 tube) has machine X and Z and Y relative to the tool axis; the rotary unit (100 mm chuck, headstock) is relative to the jaw face on the axis and only on the table for rotary jobs. Measure and replace once the machine stands.",
+    "default_tool_length": 40,
+    "spindle": [
+      {"name": "collet nut", "axis": "z", "x": 0, "y": 0, "r": 16, "z": [-16, 0]},
+      {"name": "spindle shaft", "axis": "z", "x": 0, "y": 0, "r": 13, "z": [0, 30]},
+      {"name": "spindle housing", "axis": "z", "x": 0, "y": 0, "r": 40, "z": [30, 250]},
+      {"name": "Z plate", "x": [-80, 80], "y": [45, 60], "z": [10, 330]}
+    ],
+    "gantry": [
+      {"name": "gantry beam", "x": [-150, 1185], "y": [65, 145], "z": [30, 150]}
+    ],
+    "fixed": [
+      {"name": "spoilboard", "x": [-60, 1095], "y": [-60, 1095], "z": [-170, -138], "tool_may_enter": true},
+      {"name": "ATC rack", "x": [700, 1000], "y": [965, 1035], "z": [-138, -70]},
+      {"name": "tool setter", "axis": "z", "x": 660, "y": 1000, "r": 12, "z": [-138, -80]}
+    ],
+    "rotary": {"jaw_face_x": 180, "axis_y": 400, "axis_z": -63, "parts": [
+      {"name": "chuck", "axis": "x", "y": 0, "z": 0, "r": 50, "x": [-50, 0]},
+      {"name": "headstock", "x": [-170, -50], "y": [-60, 60], "z": [-75, 60]}
+    ]}
+  }
 }

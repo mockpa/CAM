@@ -13,6 +13,15 @@ Checks
 - spindle started with the touch probe loaded               -> error
 - cutting without a tool or without G43 length offset       -> error / warning
 - A-axis moves on a machine without one, G93 moves without F -> error
+- Z moving down at the start or after a tool change before X and Y are set
+  (the spindle is wherever the M6 remap left it)            -> error
+- machine body (camcore/body.py, from the machine JSON's "body"): spindle,
+  collet nut, Z plate and the tool against the fixed obstacles (ATC rack,
+  tool setter, table, the rotary unit on rotary jobs), the gantry beam
+  against them too, and the spindle and gantry parts against the stock as
+  cut so far                                                -> error
+  The parts are swept along each move in steps of BODY_STEP; a tool without
+  a "gauge_length" gets the body's default_tool_length       -> warning
 - G2/G3 arcs (XY plane, I J centre, helical Z allowed) are replayed in short
   chords through all of the above; an end radius that differs from the start
   radius, R-format arcs and G18/G19 planes are errors
@@ -45,6 +54,9 @@ from pathlib import Path
 
 import numpy as np
 
+from .body import Body, hull, overlaps
+
+BODY_STEP = 1.0               # mm between machine body samples along a move
 ARC_RADIUS_TOLERANCE = 0.002   # mm; LinuxCNC rejects arcs whose end radius differs more
 _WORD = re.compile(r"([A-Z])\s*([-+]?\d*\.?\d+)")
 
@@ -81,6 +93,15 @@ class Machine:
     atc_pockets: int | None = None                  # tool numbers 1..atc_pockets (plus the probe) are valid
     probe_tool: int | None = None                   # touch probe: may be loaded, never with the spindle on
     table_numbers: set | None = None                # tool numbers in the controller's real tool.tbl
+    body: Body | None = None                        # machine body for collision checks
+
+    def offset_for(self, stock_spec: dict | None) -> dict:
+        """The work offset a job runs with: the machine's, except that a rotary job
+        on a machine with a rotary unit sits where the unit is (see body.py)."""
+        if (self.body is not None and self.body.rotary and stock_spec is not None
+                and stock_spec["type"] in ("cylinder", "bar") and "chuck_hold" in stock_spec):
+            return self.body.rotary_offset(stock_spec)
+        return self.work_offset
 
     @staticmethod
     def load(path) -> "Machine":
@@ -92,7 +113,8 @@ class Machine:
             table = read_tool_table(path.parent / d["tool_table"])
         return Machine(d.get("travel", Machine().travel), d.get("work_offset", Machine().work_offset),
                        d.get("has_a", True), d.get("rapid_rate", 5000.0), tools,
-                       d.get("atc_pockets"), d.get("probe_tool"), table)
+                       d.get("atc_pockets"), d.get("probe_tool"), table,
+                       Body(d["body"]) if d.get("body") else None)
 
 
 def read_tool_table(path) -> set:
@@ -359,21 +381,120 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
     feed = 1000.0
     rotary = stock is not None and stock.rotary
     warned = set()
+    wo = machine.offset_for(stock_spec)
+    body = machine.body
+    if body is not None and rotary and body.rotary and "chuck_hold" not in stock_spec:
+        issues.append(Issue("error", 0, "rotary stock has no \"chuck_hold\" (mm held in the jaws): without it the "
+                                        "job cannot be placed in the chuck, so the machine body is not checked"))
+        body = None
+    obstacles = body.obstacles(rotary) if body is not None else []
+    known = set()              # axes set since the start or the last tool change
+    spindle_parts = {}
 
     def once(level, n, msg, key):
         if key not in warned:
             warned.add(key)
             issues.append(Issue(level, n, msg))
 
+    def parts_for(n, t):
+        """Spindle parts plus the tool, relative to the tip, for tool number t."""
+        if t not in spindle_parts:
+            tinfo = machine.tools.get(t, {})
+            length = tinfo.get("gauge_length")
+            if length is None:
+                length = body.default_tool_length
+                if t:
+                    once("warning", n, f"T{t} has no \"gauge_length\" (spindle nose to tip): the machine body "
+                         f"check assumes {length:g} mm", ("length", t))
+            d = max(tinfo.get("diameter", 3.0), tinfo.get("shank", 0.0))
+            spindle_parts[t] = body.spindle_parts(length, d)
+        return spindle_parts[t]
+
+    def stock_hit(prt, a):
+        """Does a part (in work coordinates) reach into the stock as it is now?"""
+        (x0, y0, z0), (x1, y1, z1) = prt.lo, prt.hi
+        if prt.kind == "cyl_z":
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            flat = {"diameter": x1 - x0, "kind": "flat"}
+            return stock.interference(cx, a if rotary else cy, z0, flat, cy) > 0.01
+        # the cells strictly inside the box's footprint
+        i0 = max(int(math.ceil((x0 + 0.01 - stock.x0) / stock.res)), 0)
+        i1 = min(int(math.floor((x1 - 0.01 - stock.x0) / stock.res)), stock.h.shape[0] - 1)
+        if i0 > i1:
+            return False
+        if rotary:        # any material within the box's distance from the axis, at any angle
+            dist = math.hypot(max(y0, -y1, 0.0), max(z0, -z1, 0.0))
+            return float(stock.h[i0:i1 + 1].max()) > dist + 0.01
+        j0 = max(int(math.ceil((y0 + 0.01 - stock.y0) / stock.res)), 0)
+        j1 = min(int(math.floor((y1 - 0.01 - stock.y0) / stock.res)), stock.h.shape[1] - 1)
+        return j0 <= j1 and float(stock.h[i0:i1 + 1, j0:j1 + 1].max()) > z0 + 0.01
+
+    def body_check(n, pos, new):
+        """Machine body along one straight move: obstacles first, then the stock."""
+        s0 = np.array([pos[k] + wo[k] for k in "xyz"])
+        s1 = np.array([new[k] + wo[k] for k in "xyz"])
+        groups = [(parts_for(n, tool), s0, s1)]
+        if body.gantry:              # machine X and Z, Y with the tool
+            groups.append((body.gantry, s0 * (0, 1, 0), s1 * (0, 1, 0)))
+        steps = max(1, math.ceil(float(np.linalg.norm(s1 - s0)) / BODY_STEP))
+        t = np.linspace(0.0, 1.0, steps + 1)[:, None]
+
+        def at(f):
+            """Where the tool tip is (work coordinates) a fraction f along the move."""
+            return " ".join(f"{k.upper()}{pos[k] + (new[k] - pos[k]) * f:.2f}" for k in "xyz")
+        for grp, a, b in groups:
+            lo, hi = hull(grp)
+            for ob in obstacles:
+                if not all(min(a[i], b[i]) + lo[i] < ob.hi[i] and ob.lo[i] < max(a[i], b[i]) + hi[i]
+                           for i in range(3)):
+                    continue
+                for prt in grp:
+                    if prt.name == "tool" and ob.tool_may_enter or ("body", prt.name, ob.name) in warned:
+                        continue
+                    hit = overlaps(prt, a + (b - a) * t, ob)
+                    if hit.any():
+                        once("error", n, f"COLLISION: {prt.name} hits {ob.name} with the tool at work "
+                             f"{at(float(t[int(np.argmax(hit)), 0]))}", ("body", prt.name, ob.name))
+        if stock is None:
+            return
+        # the spindle and the gantry against the stock, in work coordinates
+        w = np.array([wo["x"], wo["y"], wo["z"]])
+        if rotary:
+            r = stock.radius
+            slo, shi = (stock.x0, -r, -r), (stock.x0 + stock.h.shape[0] * stock.res, r, r)
+        else:
+            slo = (stock.x0, stock.y0, stock.bottom)
+            shi = (stock.x0 + stock.h.shape[0] * stock.res, stock.y0 + stock.h.shape[1] * stock.res, stock.top)
+        for grp, a, b in groups:
+            grp = [p for p in grp if p.name != "tool"]
+            if not grp:
+                continue
+            a, b = a - w, b - w
+            lo, hi = hull(grp)
+            if not all(min(a[i], b[i]) + lo[i] < shi[i] and slo[i] < max(a[i], b[i]) + hi[i] for i in range(3)):
+                continue
+            seg = steps if not rotary else max(steps, math.ceil(abs(new["a"] - pos["a"]) / 360 * 2 * math.pi
+                                                                 * stock.radius / BODY_STEP))
+            for k in range(seg + 1):
+                f = k / seg
+                o = a + (b - a) * f
+                ang = pos["a"] + (new["a"] - pos["a"]) * f
+                for prt in grp:
+                    if ("body", prt.name, "stock") not in warned and stock_hit(prt.moved(o), ang):
+                        once("error", n, f"COLLISION: {prt.name} hits the stock with the tool at work {at(f)}",
+                             ("body", prt.name, "stock"))
+
     def move(n, kind, pos, new, total, scale=1.0):
         """One straight move (a G0/G1, or one chord of an arc): travel, time, stock checks."""
         for k in ("x", "y", "z"):
             lo, hi = machine.travel[k]
-            mval = new[k] + machine.work_offset[k]
+            mval = new[k] + wo[k]
             if not lo - 1e-6 <= mval <= hi + 1e-6:
                 once("error", n, f"{k.upper()} {new[k]:.3f} is outside machine travel "
-                     f"({lo - machine.work_offset[k]:.1f} .. {hi - machine.work_offset[k]:.1f} in work coordinates)",
+                     f"({lo - wo[k]:.1f} .. {hi - wo[k]:.1f} in work coordinates)",
                      ("travel", k))
+        if body is not None and {"x", "y"} <= known:
+            body_check(n, pos, new)
         if rotary and min(pos["z"], new["z"]) < 0:
             once("error", n, f"Z {min(pos['z'], new['z']):.3f} is below the rotary centreline (Z0)", "belowaxis")
         dist = math.dist([pos[k] for k in "xyz"], [new[k] for k in "xyz"])
@@ -440,7 +561,7 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
         if 53 in gs:     # machine-coordinate move: only used for retracts to the tool change height
             motion_mode = 0 if 0 in gs else motion_mode
             if "Z" in w:
-                pos["z"] = w["Z"][0] - machine.work_offset["z"]
+                pos["z"] = w["Z"][0] - wo["z"]
             continue
         if "T" in w:
             prepped = int(w["T"][0])
@@ -454,6 +575,7 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
                                     + (f", probe T{machine.probe_tool})" if machine.probe_tool else ")")))
         if 6 in ms:
             tool, offset_on = prepped or 0, False
+            known.clear()
         if 43 in gs:
             h = int(w.get("H", [tool])[0])
             if h != tool:
@@ -482,6 +604,10 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
         if motion_mode != 0 and inverse_time and "F" not in w:
             issues.append(Issue("error", n, "G93 inverse-time move without F word"))
         new = {**pos, **axes}
+        if new["z"] < pos["z"] - 1e-9 and not {"x", "y"} <= known | set(axes):
+            once("error", n, "Z moves down before X and Y are set (at the start or after a tool change the "
+                 "spindle is wherever the tool change left it)", ("unknownxy", tool))
+        known.update(axes)
         if motion_mode in (2, 3):
             arc = arc_points(n, w, pos, new, motion_mode == 2, res, issues)
             if arc is None:

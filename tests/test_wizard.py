@@ -86,7 +86,9 @@ def test_defaults_on_the_pawn_pass_check(tmp_path):
     out = tmp_path / "out"
     assert main([str(EX / "pawn.stl"), "-o", str(out), "--yes", *QUIET], input_fn=None) == 0
     job = json.loads((out / "pawn_job.json").read_text())
-    assert job["stock"] == {"type": "cylinder", "diameter": 30.0, "x": [-15.0, 50.0]}
+    # suggested length 50 + hold 10 + 32: the PrintNC's Z plate needs 30 mm (jaw_reach) plus
+    # JAW_CLEARANCE off the jaw face, more than the tool radius alone
+    assert job["stock"] == {"type": "cylinder", "diameter": 30.0, "x": [-42.0, 50.0], "chuck_hold": 10.0}
     assert job["models"]["pawn"]["center_yz"] and job["models"]["pawn"]["x_start"] == 0.0
     rough, finish = job["operations"]
     assert (rough["tool"], rough["floor"], rough["stock_to_leave"], rough["x_range"]) == ("em6", 3.0, 0.5, [0.0, 51.0])

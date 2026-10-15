@@ -72,6 +72,29 @@ def continue_a(paths, native):
     return paths
 
 
+def cutting_data(library: dict, tool_name: str, material) -> dict:
+    """The raw library tool's feeds and speeds for the job's material ({} without a material)."""
+    if material is None:
+        return {}
+    data = library.get(tool_name, {}).get("cutting", {})
+    if material not in data:
+        raise ValueError(f"tool {tool_name} has no cutting data for material {material!r} "
+                         f"(add \"cutting\": {{\"{material}\": {{...}}}} to it in the library)")
+    return data[material]
+
+
+def param_sources(fn, own: dict, defaults: dict, cutting: dict) -> dict:
+    """Where each parameter of op function fn comes from, as {name: (value, source)}.
+    source: "op" (the operation's own key), "cutting" (the tool's data for the
+    material) or "defaults" (the job's); the last two only supply parameters fn
+    takes (plus "rpm"). Parameters left at fn's own default are absent."""
+    takes = set(inspect.signature(fn).parameters) | {"rpm"}
+    out = {k: (v, src) for src, d in (("defaults", defaults), ("cutting", cutting)) for k, v in d.items()
+           if k in takes}
+    out.update({k: (v, "op") for k, v in own.items()})
+    return out
+
+
 def run_job(job: dict, base_dir: Path = Path(".")):
     """Build the toolpaths of a job, in cutting order.
 
@@ -98,17 +121,8 @@ def run_job(job: dict, base_dir: Path = Path(".")):
 
     def params(fn, tool_name, own):
         """Merged parameters for op function fn using tool_name; own = the op's own keys."""
-        cut = {}
-        if material is not None:
-            data = raw.get(tool_name, {}).get("cutting", {})
-            if material not in data:
-                raise ValueError(f"tool {tool_name} has no cutting data for material {material!r} "
-                                 f"(add \"cutting\": {{\"{material}\": {{...}}}} to it in the library)")
-            cut = data[material]
-        takes = set(inspect.signature(fn).parameters) | {"rpm"}
-        merged = {k: v for src in (defaults, cut) for k, v in src.items() if k in takes}
-        merged.update(own)
-        return merged
+        cut = cutting_data(raw, tool_name, material)
+        return {k: v for k, (v, _) in param_sources(fn, own, defaults, cut).items()}
 
     nodes, by_id = [], {}                    # nodes: [toolpath, node id, deps], in written order
     for idx, spec_own in enumerate(job["operations"]):

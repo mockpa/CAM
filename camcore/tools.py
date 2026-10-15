@@ -47,7 +47,11 @@ def load_library(path) -> dict[str, Tool]:
     """
     import json
     from pathlib import Path
-    data = json.loads(Path(path).read_text())
+    return library_from_dict(json.loads(Path(path).read_text()))
+
+
+def library_from_dict(data: dict) -> dict[str, Tool]:
+    """Tools from a parsed library file, with the same checks as load_library."""
     lib = {k: Tool.from_dict({"name": k, **v}) for k, v in data.items()}
     nums = [t.number for t in lib.values() if t.number is not None]
     if len(nums) != len(set(nums)):

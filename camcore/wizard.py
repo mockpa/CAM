@@ -19,7 +19,9 @@ import math
 import os
 import sys
 import webbrowser
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .check import DEFAULT_MACHINE, check
 from .job import build_model
@@ -212,6 +214,116 @@ def fmt(v: float) -> str:
     return f"{v:g}"
 
 
+class Session:
+    """The wizard's inputs (model, tool library, machine) and the answers so far,
+    in `a`. Questions read derived values from here; they follow the answers."""
+
+    def __init__(self, stl: Path, raw, lib: dict, mdata: dict, library_path=None):
+        self.stl, self.raw, self.lib, self.mdata = Path(stl), raw, lib, mdata
+        self.library_path = library_path or "the tool library"
+        self.a = {}
+        self._placed = None
+
+    def placed(self) -> tuple[float, float]:
+        """(length, largest radius) of the model placed per the answers along/flip/rotate_x."""
+        key = (self.a["along"], self.a["flip"], self.a["rotate_x"])
+        if self._placed is None or self._placed[0] != key:
+            model = build_model(model_spec(str(self.stl.resolve()), self.a), Path("."))
+            self._placed = (key, model_size(model))
+        return self._placed[1]
+
+    def materials(self) -> list[str]:
+        m = sorted({m for t in self.lib.values() if t.get("kind", "flat") in ("flat", "ball")
+                    for m in t.get("cutting", {})})
+        if not m:
+            raise WizardError(f"{self.library_path}: no flat or ball end mill has cutting data")
+        return m
+
+    def usable(self) -> list[str]:
+        return sorted(k for k, t in self.lib.items() if t.get("kind", "flat") in ("flat", "ball")
+                      and self.a["material"] in t.get("cutting", {}))
+
+    def reach(self) -> float:
+        return max(self.lib[self.a["rough_tool"]]["diameter"], self.lib[self.a["finish_tool"]]["diameter"]) / 2
+
+    def shortest_flutes(self) -> tuple[str, float]:
+        short = min((self.a["rough_tool"], self.a["finish_tool"]), key=lambda k: self.lib[k].get("flute_length", 20.0))
+        return short, self.lib[short].get("flute_length", 20.0)
+
+
+@dataclass(frozen=True)
+class Question:
+    """One wizard question. text, default and options take the Session; parse
+    takes the Session and returns a function from the answer text to the value
+    (raising WizardError). flag: the argparse attribute that answers it."""
+    key: str
+    text: Callable
+    default: Callable
+    parse: Callable
+    options: Callable | None = None
+    flag: Callable = None
+
+
+def _stock_diameter(s):
+    r_max, swing = s.placed()[1], s.mdata.get("a_max_diameter")
+    return number(round(2 * r_max, 3), swing, f": the model needs {2 * r_max:.2f} mm",
+                  f": the A axis swings at most {swing} mm")
+
+
+def _stock_length(s):
+    length, reach, hold = s.placed()[0], s.reach(), s.a["hold"]
+    return lambda v: _checked_length(number(0)(v), length, hold, reach)
+
+
+def _floor(s):
+    rs = s.a["stock_diameter"] / 2
+    short, flute = s.shortest_flutes()
+    return number(max(0.5, rs - flute), rs - 0.5,
+                  f": the {short} flutes are {flute:g} mm long, the stock radius is {rs:g} mm", " for the stock")
+
+
+QUESTIONS = [
+    Question("along", lambda s: "Model axis that goes on the rotary axis (x/y/z)",
+             lambda s: longest_axis(s.raw), lambda s: choice("xyz"), lambda s: list("xyz"),
+             lambda args: args.axis),
+    Question("flip", lambda s: "Turn it end for end, so the other end faces the chuck (y/n)",
+             lambda s: "n", lambda s: yes_no, lambda s: ["n", "y"], lambda args: "y" if args.flip else None),
+    Question("rotate_x", lambda s: "Rotate about the rotary axis, degrees", lambda s: fmt(0.0),
+             lambda s: number(-360, 360), flag=lambda args: args.rotate),
+    Question("material", lambda s: f"Material ({', '.join(s.materials())})",
+             lambda s: "hardwood" if "hardwood" in s.materials() else s.materials()[0],
+             lambda s: choice(s.materials()), lambda s: s.materials(), lambda args: args.material),
+    Question("rough_tool", lambda s: "Roughing tool", lambda s: suggest_rough(s.lib, s.a["material"]),
+             lambda s: choice(s.usable()), lambda s: s.usable(), lambda args: args.rough_tool),
+    Question("finish_tool", lambda s: "Finishing tool", lambda s: suggest_finish(s.lib, s.a["material"]),
+             lambda s: choice(s.usable()), lambda s: s.usable(), lambda args: args.finish_tool),
+    Question("stock_diameter", lambda s: "Stock diameter, mm",
+             lambda s: fmt(math.ceil(round(2 * s.placed()[1] + 2 * STOCK_MARGIN, 3))), _stock_diameter,
+             flag=lambda args: args.diameter),
+    Question("hold", lambda s: "Length held in the chuck jaws, mm", lambda s: fmt(10.0), lambda s: number(0),
+             flag=lambda args: args.hold),
+    Question("stock_length", lambda s: "Stock length, mm",
+             lambda s: fmt(suggest_length(s.placed()[0], s.a["hold"], s.reach())), _stock_length,
+             flag=lambda args: args.length),
+    Question("floor", lambda s: "Smallest radius to leave (support at the free end), mm",
+             lambda s: fmt(suggest_floor(s.a["stock_diameter"], s.shortest_flutes()[1])), _floor,
+             flag=lambda args: args.floor),
+    Question("preset", lambda s: "Accuracy (coarse/normal/fine)", lambda s: "normal",
+             lambda s: choice(list(PRESETS)), lambda s: list(PRESETS), lambda args: args.preset),
+    Question("strategy", lambda s: f"Finishing strategy ({'/'.join(STRATEGIES)})", lambda s: "helical",
+             lambda s: choice(STRATEGIES), lambda s: list(STRATEGIES), lambda args: args.strategy),
+]
+
+
+def write_job(s: Session, out: Path, library_path: Path, machine_path: Path | None) -> Path:
+    """Write the job for a fully answered session to OUT/NAME_job.json."""
+    out.mkdir(parents=True, exist_ok=True)
+    job = build_job(s.stl, out, s.a, s.lib, library_path, machine_path, s.placed()[0])
+    job_path = out / f"{s.stl.stem}_job.json"
+    job_path.write_text(json.dumps(job, indent=2) + "\n")
+    return job_path
+
+
 def run(args, input_fn=input, log=print) -> int:
     from .stl import load_stl
 
@@ -229,53 +341,18 @@ def run(args, input_fn=input, log=print) -> int:
         + ("" if raw.is_watertight else "  (not watertight: check the result in the viewer)"))
     log(f"tool library {library_path}, machine {machine_path or DEFAULT_MACHINE}")
 
-    a = {}
-    a["along"] = ask("Model axis that goes on the rotary axis (x/y/z)", longest_axis(raw), choice("xyz"), args.axis)
-    a["flip"] = ask("Turn it end for end, so the other end faces the chuck (y/n)", "n", yes_no,
-                    "y" if args.flip else None)
-    a["rotate_x"] = ask("Rotate about the rotary axis, degrees", fmt(0.0), number(-360, 360), args.rotate)
-    model = build_model(model_spec(str(stl.resolve()), a), Path("."))
-    length, r_max = model_size(model)
-    log(f"placed on the axis (bounding box centred): X 0 .. {length:.2f} mm, largest radius {r_max:.2f} mm")
+    s = Session(stl, raw, lib, mdata, library_path)
+    for q in QUESTIONS:
+        s.a[q.key] = ask(q.text(s), q.default(s), q.parse(s), q.flag(args))
+        if q.key == "rotate_x":
+            length, r_max = s.placed()
+            log(f"placed on the axis (bounding box centred): X 0 .. {length:.2f} mm, largest radius {r_max:.2f} mm")
+        elif q.key == "material":
+            for k in s.usable():
+                t = lib[k]
+                log(f"  {k:<8} T{t.get('number', '?')}  {t['diameter']:g} mm {t.get('kind', 'flat')}")
 
-    materials = sorted({m for t in lib.values() if t.get("kind", "flat") in ("flat", "ball")
-                        for m in t.get("cutting", {})})
-    if not materials:
-        raise WizardError(f"{library_path}: no flat or ball end mill has cutting data")
-    a["material"] = ask(f"Material ({', '.join(materials)})", "hardwood" if "hardwood" in materials else materials[0],
-                        choice(materials), args.material)
-    usable = sorted(k for k, t in lib.items() if t.get("kind", "flat") in ("flat", "ball")
-                    and a["material"] in t.get("cutting", {}))
-    for k in usable:
-        t = lib[k]
-        log(f"  {k:<8} T{t.get('number', '?')}  {t['diameter']:g} mm {t.get('kind', 'flat')}")
-    a["rough_tool"] = ask("Roughing tool", suggest_rough(lib, a["material"]), choice(usable), args.rough_tool)
-    a["finish_tool"] = ask("Finishing tool", suggest_finish(lib, a["material"]), choice(usable), args.finish_tool)
-    reach = max(lib[a["rough_tool"]]["diameter"], lib[a["finish_tool"]]["diameter"]) / 2
-
-    swing = mdata.get("a_max_diameter")
-    a["stock_diameter"] = ask("Stock diameter, mm", fmt(math.ceil(round(2 * r_max + 2 * STOCK_MARGIN, 3))),
-                              number(round(2 * r_max, 3), swing, f": the model needs {2 * r_max:.2f} mm",
-                                     f": the A axis swings at most {swing} mm"), args.diameter)
-    a["hold"] = ask("Length held in the chuck jaws, mm", fmt(10.0), number(0), args.hold)
-    stock_len = number(0)
-    a["stock_length"] = ask("Stock length, mm", fmt(suggest_length(length, a["hold"], reach)),
-                            lambda s: _checked_length(stock_len(s), length, a["hold"], reach), args.length)
-    rs = a["stock_diameter"] / 2
-    short = min((a["rough_tool"], a["finish_tool"]), key=lambda k: lib[k].get("flute_length", 20.0))
-    flute = lib[short].get("flute_length", 20.0)
-    a["floor"] = ask("Smallest radius to leave (support at the free end), mm",
-                     fmt(suggest_floor(a["stock_diameter"], flute)),
-                     number(max(0.5, rs - flute), rs - 0.5,
-                            f": the {short} flutes are {flute:g} mm long, the stock radius is {rs:g} mm",
-                            " for the stock"), args.floor)
-    a["preset"] = ask("Accuracy (coarse/normal/fine)", "normal", choice(list(PRESETS)), args.preset)
-    a["strategy"] = ask(f"Finishing strategy ({'/'.join(STRATEGIES)})", "helical", choice(STRATEGIES), args.strategy)
-
-    out.mkdir(parents=True, exist_ok=True)
-    job = build_job(stl, out, a, lib, library_path, machine_path, length)
-    job_path = out / f"{stl.stem}_job.json"
-    job_path.write_text(json.dumps(job, indent=2) + "\n")
+    job_path = write_job(s, out, library_path, machine_path)
     log(f"wrote {job_path} (edit it and run `camcore check {job_path}` to change anything)")
 
     ok = check(job_path, out, machine_path, sim=not args.no_sim, log=log)

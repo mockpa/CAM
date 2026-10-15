@@ -136,6 +136,31 @@ viewer from a previous run is deleted. Only take programs from the output folder
 - `-o DIR` sets the output folder (default `out`), `--sim-image` the Docker image (default `camcore-sim`).
 - Exit code 0 only if everything passed. Without the sim the report says `PASSED WITHOUT SIM`.
 
+## Desktop app
+```bash
+pip install -e .[gui]                 # PySide6 (with QtWebEngine for the embedded viewer)
+camcore gui examples/sign_job.json    # or camcore-gui; without a file it starts a new job
+```
+The app edits an ordinary job file; it has no CAM logic of its own.
+- **Operations**: the ordered list (Add, Up/Down, Duplicate, Remove) and a form for the selected one: id,
+  `after`, tool, shape/model/points, indexing, and every parameter the op takes. An empty parameter is inherited;
+  its grey text shows the value it will get and where from (the tool's data for the job's material, the job's
+  `defaults`, or the op's own default). Problems that would stop the job (a required value missing, no cutting
+  data for the material, an unknown key) are listed in red above the parameters.
+- **Shapes & models**: rectangles, circles, SVG/DXF drawings and STL models, each editable as JSON. Renaming
+  follows into the operations.
+- **Job**: post, material, tool library, machine, tool order, stock, defaults, wrapped rotary, indexing.
+- **Tool library**: the job's library file as a table (number = ATC pocket, diameter, kind, flutes, centre
+  cutting) with feeds and speeds per material. Save refuses a library `load_library` would refuse
+  (for example duplicate tool numbers).
+- **Preview** (Ctrl+R) saves the job and runs `camcore check --no-sim` into a scratch folder, then plays the
+  program in the embedded viewer. It is a look, never a program for the machine.
+- **Export** (Ctrl+E) saves the job and runs the full `camcore check` with the LinuxCNC sim into the output
+  folder (default: `out/` next to the job). As on the command line, the `.ngc` is written only if everything
+  passes; the Report tab shows the log.
+- **Tools > Rotary wizard**: the questions of `camcore rotary-wizard` in one dialog, with the same suggestions
+  and checks (each suggestion follows the answers above it). It writes the same job file, opens it and checks it.
+
 ## Run it
 ```bash
 pip install -e .[dev]
@@ -158,6 +183,8 @@ camcore/
   dxf.py        DXF import
   stl.py        STL import (rotary)
   wizard.py     camcore rotary-wizard (guided rotary job from an STL)
+  project.py    job files as the desktop app edits them (no Qt)
+  gui/          camcore-gui: PySide6 desktop app (editing and display only)
   cylmap.py     cylindrical heightmap r(x, A) of a mesh and its tool dilation
   job.py        JSON job format -> toolpaths
   preview.py    SVG preview
@@ -169,4 +196,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-medial-axis V-carve, 3-axis 3D, GUI.
+medial-axis V-carve, 3-axis 3D, a 2D preview of shapes in the app.

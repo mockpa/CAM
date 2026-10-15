@@ -5,6 +5,7 @@ set -e
 MODE=${1:-check}; FILE=${2:-/work/program.ngc}
 [ -f /work/tool.tbl ] && cp /work/tool.tbl /home/cnc/sim/tool.tbl
 [ -f /work/machine.ini ] && cp /work/machine.ini /home/cnc/sim/camcore_sim.ini
+[ -f /work/machine.var ] && cp /work/machine.var /home/cnc/sim/sim.var
 
 case "$MODE" in
   check)

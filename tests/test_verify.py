@@ -69,3 +69,24 @@ def test_examples_verify_clean():
     issues, _, sim = run((EX / "wrap.ngc").read_text(), m, cyl)
     assert [str(i) for i in issues] == []
     assert sim.h.min() < 20 - 2       # material was actually removed
+
+
+PRINTNC = Path(__file__).parent.parent / "machine" / "printnc_provisional.json"
+
+
+def test_printnc_profile_runs_examples_and_enforces_its_travel():
+    import json
+    m = machine_from_library(Machine.load(PRINTNC), EX / "tools.json")
+    assert m.travel == {"x": [0, 1035], "y": [0, 1035], "z": [-150, 0]}
+    assert m.has_a and m.rapid_rate == 17000
+    box = json.loads(PRINTNC.read_text())["stock"]
+    issues, _, _ = run((EX / "sign.ngc").read_text(), m, box)
+    assert [str(i) for i in issues] == []
+    cyl = json.loads((EX / "stock_cylinder.json").read_text())
+    issues, _, _ = run((EX / "wrap.ngc").read_text(), m, cyl)
+    assert [str(i) for i in issues] == []
+    # G54 X is +20 mm in machine coordinates, so work X1016 is 1 mm past X max.
+    errors, _ = check("G0 X1016\n", travel=m.travel, work_offset=m.work_offset)
+    assert any("outside machine travel" in e for e in errors)
+    errors, _ = check("G0 X1015\n", travel=m.travel, work_offset=m.work_offset)
+    assert errors == []

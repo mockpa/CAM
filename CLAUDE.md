@@ -33,6 +33,8 @@ Pipeline: JSON job → `job.run_job` → list of `Toolpath` (IR) → `post.get_p
 - `camcore/viewer.py` + `viewer_template.html`: self-contained HTML player (vendored three.js r128 in `camcore/vendor/`, shipped as package data).
 - `sim/`: Docker image with Debian trixie's `linuxcnc-uspace` (2.9.4, non-setuid `rtapi_app`), XYZA sim config in `sim/config/`, headless `run_check.py`. `entrypoint.sh` picks up `/work/tool.tbl` and `/work/machine.ini` if they are mounted.
 
+- `machine/`: provisional profile of the target machine (PrintNC V4 Metalcutter, still being built): verify JSON plus a matching sim INI and G54 `.var`. Keep the three in sync; `examples/machine.json` stays the small fixture the tests use. See `machine/README.md`.
+
 ## Conventions
 - Units: mm and degrees everywhere internally.
 - Machine conventions: rotary A turns around X; Z0 on the rotary centreline for rotary jobs; Z0 at the stock top for flat jobs.

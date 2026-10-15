@@ -163,6 +163,8 @@ The app edits an ordinary job file; it has no CAM logic of its own.
 
 ## Run it
 ```bash
+conda env create -p .conda -f environment.yml   # Python + OpenCAMLib (conda-forge only)
+conda activate ./.conda
 pip install -e .[dev]
 camcore examples/sign_job.json -o sign.ngc --preview sign_preview.svg
 camcore examples/wrap_job.json -o wrap.ngc      # wrapped rotary

@@ -1,0 +1,10 @@
+# Development environment. OpenCAMLib (3-axis 3D drop-cutter and waterline) is
+# only built for current Python versions on conda-forge, not on PyPI, so the
+# project uses a conda env:
+#   conda env create -p .conda -f environment.yml && .conda/bin/pip install -e .[dev]
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - opencamlib
+  - pip

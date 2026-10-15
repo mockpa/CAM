@@ -9,7 +9,7 @@ Modes: 2.5D, V-carve, wrapped rotary, rotary from STL, rotary wizard, indexed 3+
 The full roadmap is in `docs/PLAN.md`. The step-by-step build plan is in `docs/IMPLEMENTATION_GUIDE.md`. Work one guide step per session.
 
 ## Commands
-- Install: `python3 -m venv .venv && . .venv/bin/activate && pip install -e .[dev]`
+- Install: `conda env create -p .conda -f environment.yml && conda activate ./.conda && pip install -e .[dev]` (conda because OpenCAMLib, used by the 3-axis 3D ops, is only on conda-forge for current Pythons; everything else comes from pip)
 - Tests: `pytest -q` (must stay green; add tests with every feature)
 - Single test: `pytest -q tests/test_ops.py::test_wrap_maps_y_to_a_and_depth_to_radius`
 - Gate a job (generate + verify + LinuxCNC sim + viewer; `.ngc` written only if all pass): `camcore check examples/sign_job.json` (`--no-sim` for quick iterations, `-o DIR` output folder)

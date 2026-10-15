@@ -25,7 +25,7 @@ TARGET = {"drill": "points", "rotary_rough": "model", "rotary_finish": "model", 
 # Keys of an operation that are not op function parameters (job.run_job handles them).
 STRUCT_KEYS = ("op", "id", "after", "tool", "shape", "model", "points", "index", "face_z", "clear_tool", "clear")
 # Suggestions for string parameters; the ops themselves validate.
-CHOICES = {"side": ("outside", "inside", "on"), "entry": ("ramp", "helix", "plunge"), "method": ("offset", "medial"),
+CHOICES = {"side": ("outside", "inside", "on"), "entry": ("ramp", "helix", "plunge"), "method": ("offset", "medial", "adaptive"),
            "strategy": STRATEGIES + ("raster", "waterline")}
 TOOL_KINDS = ("flat", "ball", "bull", "vbit")
 CUTTING_KEYS = ("rpm", "feed", "plunge", "step_down", "stepover_ratio", "ramp_angle")

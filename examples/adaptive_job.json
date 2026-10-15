@@ -1,0 +1,18 @@
+{
+  "post": "linuxcnc",
+  "tool_library": "tools.json",
+  "material": "aluminium",
+  "stock": {"type": "box", "x": [0, 90], "y": [0, 60], "z": [-12, 0]},
+  "defaults": {"safe_z": 5.0},
+  "shapes": {
+    "pocket": {"type": "difference",
+               "a": {"type": "union", "shapes": [
+                 {"type": "rect", "x": 10, "y": 10, "w": 50, "h": 40},
+                 {"type": "rect", "x": 55, "y": 22, "w": 25, "h": 16}]},
+               "b": {"type": "circle", "cx": 35, "cy": 30, "r": 6}}
+  },
+  "operations": [
+    {"op": "pocket", "shape": "pocket", "tool": "em6", "method": "adaptive",
+     "depth": 8, "step_down": 4, "stepover_ratio": 0.15, "feed": 1200, "plunge": 200}
+  ]
+}

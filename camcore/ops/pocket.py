@@ -1,4 +1,5 @@
-"""Contour-parallel pocket clearing."""
+"""Pocket clearing: contour-parallel loops (method="offset") or adaptive
+(constant engagement, method="adaptive", see ops/adaptive.py)."""
 from __future__ import annotations
 
 from shapely.geometry import LinearRing, LineString, Point
@@ -30,14 +31,23 @@ def pocket(shape: BaseGeometry, tool: Tool, depth: float, step_down: float,
            stepover_ratio: float = 0.4, feed: float = 1000, plunge: float = 300,
            safe_z: float = 5.0, climb: bool = True, top_z: float = 0.0,
            entry: str = "helix", ramp_angle: float = 3.0, helix_diameter: float | None = None,
-           name: str = "pocket") -> Toolpath:
+           method: str = "offset", name: str = "pocket") -> Toolpath:
     """Clear `shape` level by level. Within a level the tool links from loop to loop at
     depth where the straight link stays inside the pocket; elsewhere it retracts and
-    enters again (helix, falling back to a ramp along the loop, or plunge)."""
+    enters again (helix, falling back to a ramp along the loop, or plunge).
+
+    method="adaptive": stepover_ratio is the width of cut the tool keeps everywhere
+    (0.1 to 0.25 is typical, with step_down up to the flute length); it always
+    enters by helix, so `entry` does not apply."""
     if not 0 < stepover_ratio <= 1:
         raise ValueError("stepover_ratio must be in (0, 1]")
     check_entry(entry, tool, ("helix", "ramp", "plunge"))
     stepover = tool.diameter * stepover_ratio
+    if method == "adaptive":
+        return _adaptive(shape, tool, depth, step_down, stepover, feed, plunge, safe_z, climb, top_z,
+                         ramp_angle, helix_diameter, name)
+    if method != "offset":
+        raise ValueError(f'pocket method must be "offset" or "adaptive", not {method!r}')
     loops = offset_loops(shape, tool.radius, stepover, climb)
     allowed = offset(shape, -tool.radius + 1e-6)   # where the tool centre may go
     tp = Toolpath(name, tool)
@@ -87,3 +97,20 @@ def clear_levels(tp: Toolpath, loops, allowed: BaseGeometry, tool: Tool, levels,
             here = loop[0]
         tp.rapid(z=safe_z)
         z_prev = z
+
+
+def _adaptive(shape, tool, depth, step_down, width, feed, plunge, safe_z, climb, top_z, ramp_angle,
+              helix_diameter, name) -> Toolpath:
+    from .adaptive import plan, replay
+
+    steps, fallback, allowed = plan(shape, tool, width, climb, helix_diameter)
+    levels = step_depths(depth, step_down, top_z)
+    tp = Toolpath(name, tool)
+    replay(tp, steps, allowed, levels, top_z, safe_z, feed, plunge, climb, ramp_angle)
+    for comp in fallback:                       # too narrow for a helix: contour-parallel loops
+        loops = offset_loops(comp, 1e-6, width, climb)
+        clear_levels(tp, loops, comp.buffer(1e-6), tool, levels, top_z, top_z, safe_z,
+                     feed, plunge, climb, "ramp", ramp_angle, None)
+    if fallback:
+        tp.notes.append(f"{name}: {len(fallback)} part(s) too narrow for a helix cleared with offset loops")
+    return tp

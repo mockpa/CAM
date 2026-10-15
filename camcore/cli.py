@@ -1,4 +1,5 @@
-"""Command line: camcore JOB.json [-o out.nc], or camcore check JOB.json (see check.py)"""
+"""Command line: camcore JOB.json [-o out.nc], camcore check JOB.json (see check.py),
+or camcore rotary-wizard MODEL.stl (see wizard.py)"""
 from __future__ import annotations
 
 import argparse
@@ -14,6 +15,9 @@ def main(argv=None):
     if argv[:1] == ["check"]:
         from .check import main as check_main
         sys.exit(check_main(argv[1:]))
+    if argv[:1] == ["rotary-wizard"]:
+        from .wizard import main as wizard_main
+        sys.exit(wizard_main(argv[1:]))
     ap = argparse.ArgumentParser(prog="camcore", description="Generate G-code from a JSON job")
     ap.add_argument("job")
     ap.add_argument("-o", "--output", help="output file (default: stdout)")

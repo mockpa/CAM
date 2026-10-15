@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # camcore
 
 CAM software for a LinuxCNC router/mill with an automatic tool changer and a 4th (A) rotary axis.
-Modes: 2.5D, V-carve, wrapped rotary, rotary from STL (done); rotary wizard, indexed 3+1, 3-axis 3D (planned).
+Modes: 2.5D, V-carve, wrapped rotary, rotary from STL, rotary wizard (done); indexed 3+1, 3-axis 3D (planned).
 The full roadmap is in `docs/PLAN.md`. The step-by-step build plan is in `docs/IMPLEMENTATION_GUIDE.md`. Work one guide step per session.
 
 ## Commands
@@ -13,6 +13,7 @@ The full roadmap is in `docs/PLAN.md`. The step-by-step build plan is in `docs/I
 - Tests: `pytest -q` (must stay green; add tests with every feature)
 - Single test: `pytest -q tests/test_ops.py::test_wrap_maps_y_to_a_and_depth_to_radius`
 - Gate a job (generate + verify + LinuxCNC sim + viewer; `.ngc` written only if all pass): `camcore check examples/sign_job.json` (`--no-sim` for quick iterations, `-o DIR` output folder)
+- Rotary wizard (STL in, checked job out): `camcore rotary-wizard examples/pawn.stl` (`--yes` takes all suggested answers, `--no-sim`, `--no-open`)
 - Generate G-code only: `camcore examples/sign_job.json -o out/sign.ngc --preview out/sign.svg` (`--post grbl` overrides the job's post)
 - Dry run + 3D viewer: `camcore-verify out/sign.ngc --machine examples/machine.json --tools examples/tools.json --view out/sign_view.html`
 - Rotary dry run: add `--stock examples/stock_cylinder.json`
@@ -35,6 +36,7 @@ Pipeline: JSON job → `job.run_job` → list of `Toolpath` (IR) → `post.get_p
 - Rotary from STL: `stl.py` loads and places the mesh (model frame = machine frame at A = 0, rotary axis = model X; `revolve` builds solids of revolution). `cylmap.py`: `radial_map` ray-casts r(x, A) (own vectorised Moller-Trumbore, no rtree/embree), `tool_map` dilates it per cutter in closed form, treating everything between the axis and r along each ray as material (conservative). The tool looks along u(A) = (0, -sin A, cos A), matching the viewer and verify's cylinder stock (ISO sign: +A turns the part by -A); `tests/test_cylmap.py` pins this.
 - `ops/rotary3d.py`: `rotary_rough` / `rotary_finish`, dispatched by `job.py` for ops with `"model"` (stock diameter from the cylinder stock). Paths interpolate `_envelope` (3x3 max of the no-gouge grid), which is provably above the sampled model between nodes; plain interpolation gouged 0.17 mm at a ball's edge contact. `decimate` compares dropped points with the move at the same X/A position (the controller moves X, A, Z together), with A relative to the move start; nearest-point distance hid 0.13 mm Z errors on steep flanks. `tests/test_rotary_ops.py::worst_gouge` checks paths against the model by brute force: keep it passing. Rotary-op paths are not wrapped, and `job.continue_a` shifts each by whole turns to start near the previous A.
 - Ops report adaptations- Ops report adaptations (fewer tabs, no lead, ...) in `Toolpath.notes`; `camcore check` puts them in the report.
+- `camcore/wizard.py` (`camcore rotary-wizard`): questions only; it writes an ordinary job (`build_job`) and hands it to `check.check`, never G-code itself. Questions go through `Asker` (flag value, else `--yes` default, else prompt until valid), so tests drive it with a scripted `input_fn`. It owns the chuck layout (`layout`: stock long enough that tools stay `JAW_CLEARANCE` off the jaws) and the machine's `a_max_diameter` limit.
 - `camcore/viewer.py` + `viewer_template.html`: self-contained HTML player (vendored three.js r128 in `camcore/vendor/`, shipped as package data).
 - `sim/`: Docker image with Debian trixie's `linuxcnc-uspace` (2.9.4, non-setuid `rtapi_app`), XYZA sim config in `sim/config/`, headless `run_check.py`. `entrypoint.sh` picks up `/work/tool.tbl`, `/work/machine.ini` and `/work/machine.var` (G54) if they are mounted.
 

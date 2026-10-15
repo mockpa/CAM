@@ -44,11 +44,12 @@ def build_shape(spec: dict, base_dir: Path):
 
 
 def build_model(spec: dict, base_dir: Path):
-    """A mesh for continuous rotary ops: {"file": "x.stl", "rotate_x": 0, "center_yz": false,
-    "x_start": null, "translate": [0, 0, 0]} (stl.place)."""
+    """A mesh for continuous rotary ops: {"file": "x.stl", "along": "x", "flip": false, "rotate_x": 0,
+    "center_yz": false, "x_start": null, "translate": [0, 0, 0]} (stl.place)."""
     from .stl import load_stl, place
     return place(load_stl(base_dir / spec["file"]), spec.get("rotate_x", 0.0), spec.get("center_yz", False),
-                 spec.get("x_start"), spec.get("translate", (0.0, 0.0, 0.0)))
+                 spec.get("x_start"), spec.get("translate", (0.0, 0.0, 0.0)), spec.get("along", "x"),
+                 spec.get("flip", False))
 
 
 def continue_a(paths, native):

@@ -53,7 +53,8 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
     `ignore_open`. Text, dimensions and hatches are ignored. See `examples/bracket_job.json`.
   - Curves are flattened with chords within 0.005 mm, so they come back out as G2/G3 arcs.
 - **Rotary from STL** (continuous 4th axis, DeskProto-style): `"models": {"pawn": {"file": "pawn.stl"}}` loads
-  a mesh lying on the rotary (X) axis; `rotate_x`, `center_yz`, `x_start` and `translate` place it. Operations
+  a mesh lying on the rotary (X) axis; `along` (model axis put on X), `flip`, `rotate_x`, `center_yz`, `x_start`
+  and `translate` place it, in that order. Operations
   take `"model"` instead of `"shape"` and the stock diameter from the job's cylinder stock:
   - `rotary_rough`: Z levels of `step_down` from the stock radius inwards, one helical pass per level over the X
     span that still needs cutting, leaving `stock_to_leave` (flat or ball end mills). A turns the other way on
@@ -72,6 +73,17 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
   Underneath: `cylmap.radial_map` samples r(x, A), the model's outermost radius at each X and machine angle;
   `cylmap.tool_map` turns it into the lowest no-gouge tip radius for a flat, ball or V-bit cutter. At machine
   angle A the tool looks at the model along (0, -sin A, cos A), the same mapping as the viewer and verify.
+- **Rotary wizard**: `camcore rotary-wizard model.stl` asks a few questions and builds the rotary job for you:
+  which model axis lies on the rotary axis (default: the longest), end for end, rotation about X, material,
+  roughing and finishing tool from the library (default: largest flat end mill, smallest ball), stock diameter
+  (default: model + 2 mm per side, at most the machine's `a_max_diameter`), length held in the chuck and stock
+  length, the smallest radius to leave, accuracy (`coarse`/`normal`/`fine`) and finishing strategy. It centres
+  the model on the axis with its chuck end at X0, writes `out/NAME_job.json`, runs `camcore check` and opens
+  the viewer. The chuck is on the low-X side; the stock is made long enough that no tool comes within 2 mm of
+  the jaws, and the default floor keeps every cut within the shortest flute length. Every question has a flag
+  (`camcore rotary-wizard --help`); `--yes` takes the suggested answer for the rest:
+  `camcore rotary-wizard examples/pawn.stl --yes --preset fine --strategy x_raster`.
+  The job file is a normal job: edit it and run `camcore check` on it again.
 - **Post**: LinuxCNC (default: T/M6 + G43 tool changes, A rotary axis, G64 blending) and GRBL 1.1 (pauses with `M0` on tool change, no A axis).
 - **Arc output** (LinuxCNC): runs of feed moves become G2/G3 arcs (helical where Z changes) when an arc stays
   within 0.01 mm of every original segment, at most 180 deg per arc. The sign example shrinks from about 16000 to
@@ -123,6 +135,7 @@ camcore/
   svg.py        SVG import
   dxf.py        DXF import
   stl.py        STL import (rotary)
+  wizard.py     camcore rotary-wizard (guided rotary job from an STL)
   cylmap.py     cylindrical heightmap r(x, A) of a mesh and its tool dilation
   job.py        JSON job format -> toolpaths
   preview.py    SVG preview
@@ -134,4 +147,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-medial-axis V-carve, rotary wizard, indexed 3+1, 3-axis 3D, GUI.
+medial-axis V-carve, indexed 3+1, 3-axis 3D, GUI.

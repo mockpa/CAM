@@ -12,7 +12,7 @@ from the build plan, not from a running machine:
   and `camcore check` runs the sim with that table
 - the G54 offset (20, 20, -120) is a placeholder
 
-`a_max_diameter` is recorded for the rotary steps; nothing enforces it yet.
+`a_max_diameter` limits the stock diameter in `camcore rotary-wizard`; verify does not check it yet.
 
 | File | Used by |
 |---|---|

@@ -25,14 +25,25 @@ def load_stl(path):
 
 
 def place(mesh, rotate_x: float = 0.0, center_yz: bool = False, x_start: float | None = None,
-          translate=(0.0, 0.0, 0.0)):
-    """A placed copy: turned `rotate_x` degrees about X, its Y/Z bounding box centred on
-    the axis if `center_yz`, its lowest X moved to `x_start`, then moved by `translate`."""
+          translate=(0.0, 0.0, 0.0), along: str = "x", flip: bool = False):
+    """A placed copy: the model axis `along` ("x", "y" or "z") turned onto X, turned
+    end for end if `flip` (180 deg about Z), turned `rotate_x` degrees about X, its
+    Y/Z bounding box centred on the axis if `center_yz`, its lowest X moved to
+    `x_start`, then moved by `translate`."""
     import trimesh
 
+    rot = trimesh.transformations.rotation_matrix
     m = mesh.copy()
+    if along == "y":                         # -90 deg about Z: model Y becomes X
+        m.apply_transform(rot(-np.pi / 2, (0, 0, 1)))
+    elif along == "z":                       # +90 deg about Y: model Z becomes X
+        m.apply_transform(rot(np.pi / 2, (0, 1, 0)))
+    elif along != "x":
+        raise ValueError(f"along must be x, y or z, not {along!r}")
+    if flip:
+        m.apply_transform(rot(np.pi, (0, 0, 1)))
     if rotate_x:
-        m.apply_transform(trimesh.transformations.rotation_matrix(np.radians(rotate_x), (1, 0, 0)))
+        m.apply_transform(rot(np.radians(rotate_x), (1, 0, 0)))
     off = np.zeros(3)
     if center_yz:
         off[1:] = -(m.bounds[0][1:] + m.bounds[1][1:]) / 2

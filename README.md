@@ -14,7 +14,9 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
 - **Holding tabs** (profiles): `"tabs": {"count": 4, "width": 6, "height": 1.5}` (or `"spacing"` in mm instead of
   `"count"`, optional `"ramp_angle"`, default 30 deg). `width` is the tab at the part edge, `height` the material
   left above the bottom of the cut. Only passes below the tab top are affected: the tool rises over each tab and
-  ramps back down after it, so tabs are trapezoids. See `examples/cutout_job.json`.
+  ramps back down after it, so tabs are trapezoids. See `examples/cutout_job.json`. A contour too short for the
+  requested tabs gets as many as fit; one whose inside waste is milled away (slug under 1 mm) gets none. Each
+  such adjustment is listed as a `note:` by `camcore` and in the `camcore check` report.
 - **Pocket**: contour-parallel clearing with islands, step-downs, stepover as a fraction of tool diameter.
 - **V-carve**: offset-based, depth follows the distance to the edge; optional `max_depth` + `clear_tool` for flat-bottom carving (an endmill clears the floor first).
 - **Drill**: peck drilling (centre-cutting tools only).
@@ -26,7 +28,16 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
   steeper than 45 deg with a tool that is not centre-cutting.
 - **Rotary (wrapped)**: `"rotary": {"diameter": 40}` wraps any job around the A axis (Y becomes A, Z0 on the axis centreline), with G93 inverse-time feeds.
 - **Tool library / ATC**: `"tool_library": "tools.json"` with tool numbers; LinuxCNC post emits `Tn M6`, `G43 Hn` and stages the next tool; `"tool_order": "minimize_changes"` groups ops by tool.
-- **Import**: SVG (path with M/L/H/V/C/Q/Z, polygon, polyline, rect, circle; even-odd holes), plus rect/circle/polygon/union/difference shapes in the job file.
+- **Import**: shapes in the job file (rect, circle, polygon, union, difference), SVG and DXF; nested contours
+  become holes (even-odd). `"fit_origin": [x, y]` moves a drawing's lower-left corner there.
+  - **SVG** (`{"type": "svg", "file": ..., "scale": 1}`): path (M L H V C S Q T A Z), polygon, polyline, rect,
+    circle, ellipse; `transform` on elements and nested groups. A physical `width`/`height` (mm, cm, in, pt, pc)
+    with a viewBox sets the scale; otherwise 1 user unit = 1 mm.
+  - **DXF** (`{"type": "dxf", "file": ..., "layers": ["CUT"], "join_tolerance": 0.01, "ignore_open": false}`):
+    LINE, ARC, CIRCLE, LWPOLYLINE (bulges), POLYLINE, SPLINE, ELLIPSE, block INSERTs; units from `$INSUNITS`.
+    Open pieces are joined end to end; a contour that still does not close is an error naming where, unless
+    `ignore_open`. Text, dimensions and hatches are ignored. See `examples/bracket_job.json`.
+  - Curves are flattened with chords within 0.005 mm, so they come back out as G2/G3 arcs.
 - **Post**: LinuxCNC (default: T/M6 + G43 tool changes, A rotary axis, G64 blending) and GRBL 1.1 (pauses with `M0` on tool change, no A axis).
 - **Arc output** (LinuxCNC): runs of feed moves become G2/G3 arcs (helical where Z changes) when an arc stays
   within 0.01 mm of every original segment, at most 180 deg per arc. The sign example shrinks from about 16000 to
@@ -86,4 +97,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-SVG transforms, DXF import, medial-axis V-carve, rotary from STL, indexed 3+1, 3-axis 3D, GUI.
+medial-axis V-carve, rotary from STL, indexed 3+1, 3-axis 3D, GUI.

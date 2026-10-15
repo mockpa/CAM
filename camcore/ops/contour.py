@@ -77,9 +77,9 @@ class Tabs:
         self.length, self.top, self.slope = length, bottom_z + height, math.tan(math.radians(angle))
         # On the tool path a tab is the material width plus the tool diameter long.
         self.half = (width + tool_diameter) / 2
-        if n * 2 * self.half >= length:
-            raise ValueError(f"{n} tabs of width {width} mm don't fit on a {length:.1f} mm contour")
-        self.centres = [length * (i + 0.5) / n for i in range(n)]
+        self.requested = n
+        n = min(n, math.ceil(length / (2 * self.half)) - 1)     # as many as fit with a gap between them
+        self.centres = [length * (i + 0.5) / n for i in range(n)] if n > 0 else []
 
     def z(self, s: float) -> float:
         best = -math.inf
@@ -114,9 +114,13 @@ class Lead:
     """
 
     def __init__(self, ring, radius: float, climb: bool):
-        (px, py), (qx, qy) = ring[0], ring[1]
-        L = math.hypot(qx - px, qy - py)
-        tx, ty = (qx - px) / L, (qy - py) / L
+        # tangent at the start: the mean of the segments before and after it, so on a
+        # curve flattened into chords the lead is tangent to the curve, not to one chord
+        (px, py), (qx, qy), (ox, oy) = ring[0], ring[1], ring[-2]
+        a = math.atan2(qy - py, qx - px)
+        b = math.atan2(py - oy, px - ox)
+        mid = a + ((b - a + math.pi) % (2 * math.pi) - math.pi) / 2
+        tx, ty = math.cos(mid), math.sin(mid)
         self.sign = 1 if climb else -1                       # +1: counter-clockwise
         wx, wy = -ty * self.sign, tx * self.sign             # unit normal towards the waste
         self.r = radius

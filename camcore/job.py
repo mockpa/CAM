@@ -27,15 +27,19 @@ def build_shape(spec: dict, base_dir: Path):
         g = Polygon(spec["points"], spec.get("holes", []))
     elif t == "svg":
         g = load_svg(str(base_dir / spec["file"]), spec.get("scale", 1.0))
-        if "fit_origin" in spec:
-            minx, miny, *_ = g.bounds
-            g = translate(g, spec["fit_origin"][0] - minx, spec["fit_origin"][1] - miny)
+    elif t == "dxf":
+        from .dxf import load_dxf
+        g = load_dxf(str(base_dir / spec["file"]), spec.get("scale", 1.0), spec.get("layers"),
+                     spec.get("join_tolerance", 0.01), spec.get("ignore_open", False))
     elif t == "union":
         g = unary_union([build_shape(s, base_dir) for s in spec["shapes"]])
     elif t == "difference":
         g = build_shape(spec["a"], base_dir).difference(build_shape(spec["b"], base_dir))
     else:
         raise ValueError(f"unknown shape type {t}")
+    if "fit_origin" in spec:                      # move the drawing's lower-left corner here
+        minx, miny, *_ = g.bounds
+        g = translate(g, spec["fit_origin"][0] - minx, spec["fit_origin"][1] - miny)
     return g
 
 

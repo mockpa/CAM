@@ -1,6 +1,7 @@
 """Profile (contour) cutting: inside, outside or on the line."""
 from __future__ import annotations
 
+from shapely.geometry import LinearRing, Polygon
 from shapely.geometry.base import BaseGeometry
 
 from ..tools import Tool
@@ -9,6 +10,9 @@ from .common import offset as offset_geom
 from .common import polygons, rings, step_depths
 from .contour import RingParam, Tabs, cut_contour, plan_lead
 from .entry import approach, check_entry
+
+
+MIN_SLUG = 1.0     # mm: waste narrower than this inside a contour is not worth holding with tabs
 
 
 def profile(shape: BaseGeometry, tool: Tool, depth: float, step_down: float,
@@ -36,8 +40,23 @@ def profile(shape: BaseGeometry, tool: Tool, depth: float, step_down: float,
         inset = offset_geom(shape, -tool.radius + 1e-6)
         keep_clear = lambda path: path.within(inset.buffer(1e-9))                       # noqa: E731
     for ring in contours:
+        where = f"contour at ({ring[0][0]:.1f}, {ring[0][1]:.1f})"
         tab = Tabs(RingParam(ring).length, tabs, tool.diameter, top_z - depth, top_z) if tabs else None
+        # Waste is on the left (climb) / right of travel; if that is the inside of this ring
+        # and the tool mills (nearly) all of it away, there is no slug to hold.
+        if tab and LinearRing(ring).is_ccw == climb and Polygon(ring).buffer(-tool.radius - MIN_SLUG / 2).is_empty:
+            tp.notes.append(f"{name}: {where} is milled out completely, no tabs needed")
+            tab = None
+        if tab and len(tab.centres) < tab.requested:
+            tp.notes.append(f"{name}: {where} is too short for {tab.requested} tabs, "
+                            f"{len(tab.centres) or 'no'} tab(s) used")
+        if tab and not tab.centres:
+            tab = None
         lead = plan_lead(ring, lead_radius, climb, keep_clear, tool.radius) if lead_radius else None
+        if lead_radius and lead is None:
+            tp.notes.append(f"{name}: {where} has no room for a lead arc, ramping in along it")
+        elif lead and lead.r < lead_radius:
+            tp.notes.append(f"{name}: {where} lead radius reduced to {lead.r:g} mm to stay off the part")
         start = lead.at(lead.phi_s) if lead else ring[0]
         approach(tp, start[0], start[1], top_z, top_z, safe_z, plunge)
         cut_contour(tp, ring, levels, top_z, entry, ramp_angle, feed, plunge, tab, lead)

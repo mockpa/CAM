@@ -26,6 +26,8 @@ def main(argv=None):
     gcode = job_post(job, args.post).emit(paths)
 
     for tp in paths:
+        for note in tp.notes:
+            print(f"note: {note}", file=sys.stderr)
         f, r = tp.length()
         print(f"{tp.name:<16} tool={tp.tool.name:<10} moves={len(tp.moves):<6} "
               f"cut={f/1000:.2f} m rapid={r/1000:.2f} m", file=sys.stderr)

@@ -19,7 +19,7 @@ from ..toolpath import Move, Toolpath
 
 def wrap(tp: Toolpath, diameter: float, safe_z: float | None = None) -> Toolpath:
     r = diameter / 2.0
-    out = Toolpath(tp.name, tp.tool, tp.spindle_rpm)
+    out = Toolpath(tp.name, tp.tool, tp.spindle_rpm, notes=list(tp.notes))
     for m in tp.moves:
         a = None if m.y is None else math.degrees(m.y / r)
         z = None if m.z is None else r + m.z

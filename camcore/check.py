@@ -95,7 +95,9 @@ def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: s
 
     gcode = motions = stock_sim = issues = None
     try:
-        gcode = job_post(job).emit(run_job(job, base))
+        paths = run_job(job, base)
+        gcode = job_post(job).emit(paths)
+        lines += [f"note: {n}" for tp in paths for n in tp.notes]
     except Exception as e:                    # noqa: BLE001 - any failure here must end in a report
         fail(f"G-code generation: {type(e).__name__}: {e}")
 

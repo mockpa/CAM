@@ -300,7 +300,7 @@ def test_tabs_leave_material_and_pass_verify():
 def test_tab_settings_are_checked():
     sq = box(0, 0, 20, 20)
     bad = [({"width": 2, "height": 1}, "count"), ({"count": 2, "spacing": 5, "width": 2, "height": 1}, "count"),
-           ({"count": 2, "width": 2, "height": 3}, "height"), ({"count": 20, "width": 2, "height": 1}, "fit"),
+           ({"count": 2, "width": 2, "height": 3}, "height"),
            ({"count": 2, "width": 2, "height": 1, "ramp_angle": 40}, "ramp_angle"),
            ({"count": 2, "width": 2, "height": 1, "size": 3}, "unknown")]
     for spec, msg in bad:
@@ -308,9 +308,10 @@ def test_tab_settings_are_checked():
             ops.profile(sq, Tool("e2", 2.0), depth=3, step_down=1, side="on", tabs=spec)
 
 
-def test_cutout_example_is_pinned():
+@pytest.mark.parametrize("name", ["cutout", "bracket"])
+def test_example_programs_are_pinned(name):
     ex = Path(__file__).parent.parent / "examples"
-    assert job_to_gcode(ex / "cutout_job.json") == (ex / "cutout.ngc").read_text()
+    assert job_to_gcode(ex / f"{name}_job.json") == (ex / f"{name}.ngc").read_text()
 
 
 def test_climb_keeps_the_wall_on_the_right():
@@ -338,12 +339,14 @@ def test_lead_arcs_enter_tangentially_from_the_waste():
     pts = feed_xy(tp)
     from camcore.ops.common import offset, polygons, rings
     ring = rings(polygons(offset(part, tool.radius))[0])[0]
-    # the lead-in ends exactly at the contour start, on a radius-4 circle tangent to the contour there:
-    # its centre is 4 mm from the start, square to the contour, on the waste (left, for climb) side
+    # the lead-in ends exactly at the contour start, on a radius-4 circle tangent to the contour there
+    # (tangent = mean direction of the chords before and after the start, i.e. of the curve they
+    # flatten): its centre is 4 mm from the start, square to it, on the waste (left, for climb) side
     i = next(k for k, p in enumerate(pts) if math.dist(p[:2], ring[0]) < 1e-9)
-    tx, ty = ring[1][0] - ring[0][0], ring[1][1] - ring[0][1]
-    n = math.hypot(tx, ty)
-    cx, cy = ring[0][0] - 4 * ty / n, ring[0][1] + 4 * tx / n
+    a = math.atan2(ring[1][1] - ring[0][1], ring[1][0] - ring[0][0])
+    b = math.atan2(ring[0][1] - ring[-2][1], ring[0][0] - ring[-2][0])
+    mid = a + ((b - a + math.pi) % (2 * math.pi) - math.pi) / 2
+    cx, cy = ring[0][0] - 4 * math.sin(mid), ring[0][1] + 4 * math.cos(mid)
     assert part.exterior.distance(Point(cx, cy)) > part.exterior.distance(Point(ring[0]))     # waste side
     for x, y, _ in pts[i - 5:i + 1]:
         assert math.hypot(x - cx, y - cy) == pytest.approx(4, abs=1e-9)
@@ -375,3 +378,22 @@ def test_lead_falls_back_where_it_does_not_fit_and_needs_a_side():
     assert all(inset.buffer(1e-6).contains(Point(x, y)) for x, y, _ in pts)   # shrunk lead stays inside
     with pytest.raises(ValueError, match="lead_radius"):
         ops.profile(hole, tool, depth=1, step_down=1, side="on", lead_radius=2)
+
+
+def test_tabs_that_do_not_fit_are_reduced_with_a_note():
+    sq = box(0, 0, 20, 20)                     # path 80 mm; a tab takes 4 mm of it with a 2 mm tool
+    tp = ops.profile(sq, Tool("e2", 2.0), depth=3, step_down=1, side="on", tabs={"count": 25, "width": 2, "height": 1})
+    assert tp.notes == ["profile: contour at (20.0, 0.0) is too short for 25 tabs, 19 tab(s) used"]
+    tp = ops.profile(box(0, 0, 1, 1), Tool("e2", 2.0), depth=3, step_down=1, side="on",
+                     tabs={"count": 2, "width": 2, "height": 1})
+    assert tp.notes == ["profile: contour at (1.0, 0.0) is too short for 2 tabs, no tab(s) used"]
+    assert min(z for *_, z in feed_xy(tp)) == -3.0
+    tp = ops.profile(box(0, 0, 8, 8), Tool("em3", 3.0), depth=1, step_down=1, side="inside", lead_radius=20)
+    assert any("lead radius reduced" in n or "no room for a lead" in n for n in tp.notes)
+
+
+def test_no_tabs_where_the_waste_is_milled_out():
+    part = box(0, 0, 40, 30).difference(Point(20, 15).buffer(2.5)).difference(Point(8, 8).buffer(6))
+    tp = ops.profile(part, Tool("em3", 3.0), depth=3, step_down=1, tabs={"count": 2, "width": 3, "height": 1})
+    small = [n for n in tp.notes if "milled out completely" in n]
+    assert len(small) == 1 and "(21.0, 15." in small[0]                # the 5 mm hole, not the 12 mm one

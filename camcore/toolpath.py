@@ -26,6 +26,7 @@ class Toolpath:
     tool: object
     spindle_rpm: float = 18000
     moves: list[Move] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)   # things the op adapted that the user should know
 
     def rapid(self, x=None, y=None, z=None, a=None):
         self.moves.append(Move("rapid", x, y, z, a))

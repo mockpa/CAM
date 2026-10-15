@@ -18,7 +18,12 @@ Python core for a CAM application ([the plan](docs/PLAN.md)): 2.5D, V-carve, 3-a
   requested tabs gets as many as fit; one whose inside waste is milled away (slug under 1 mm) gets none. Each
   such adjustment is listed as a `note:` by `camcore` and in the `camcore check` report.
 - **Pocket**: contour-parallel clearing with islands, step-downs, stepover as a fraction of tool diameter.
-- **V-carve**: offset-based, depth follows the distance to the edge; optional `max_depth` + `clear_tool` for flat-bottom carving (an endmill clears the floor first).
+- **V-carve**: depth follows the distance to the edge; optional `max_depth` + `clear_tool` for flat-bottom carving (an endmill clears the floor first).
+  `"method": "offset"` (default) stacks inset contours every `step`; `"method": "medial"` runs the tip once along the
+  medial axis (Voronoi of the boundary) at the depth where the cone touches both walls: sharp corners, a fraction of the
+  moves and time (the sign's V pass: 59 lines instead of 446, 0.5 instead of 5 min) and a closer groove (`tolerance`, default
+  0.01 mm of wall material). It descends along the V walls and plunges at the deepest points, so it needs
+  `"entry": "plunge"` and a centre-cutting V-bit. Example: `examples/sign_medial_job.json`.
 - **Drill**: peck drilling (centre-cutting tools only).
 - **Entry moves**: nothing plunges straight down by default. Pockets enter on a helix (falling back to a ramp
   along the loop where it does not fit) and link from loop to loop at depth; profiles and V-carve ramp along the
@@ -197,8 +202,8 @@ pytest
 camcore/
   tools.py      tool definitions (flat, ball, bull nose, V-bit) and their profiles
   toolpath.py   Toolpath IR: rapid/feed moves with X Y Z A
-  ops/          profile, pocket, vcarve, drill, wrap, index, rotary_rough/finish,
-                surface_rough/finish (geometry in, IR out)
+  ops/          profile, pocket, vcarve (+ medial.py, its medial axis), drill, wrap, index,
+                rotary_rough/finish, surface_rough/finish (geometry in, IR out)
   post/         IR to G-code; base class, LinuxCNC, GRBL
   svg.py        SVG import
   dxf.py        DXF import
@@ -218,4 +223,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-medial-axis V-carve, adaptive clearing, rest machining after 3D roughing, a 2D preview of shapes in the app.
+adaptive clearing, rest machining after 3D roughing, a 2D preview of shapes in the app.

@@ -55,7 +55,7 @@ The IR is the key contract: every mode produces the same IR, and simulation, pos
 ### V-carve (MVP)
 - Depth at a point = distance to nearest boundary / tan(half V angle).
 - **MVP method: offset-based.** Inset the shape in small increments `d`; each inset contour is cut at depth `d / tan(a/2)`. Simple, robust, and produces correct depth everywhere; resolution set by step size.
-- **Phase 2: medial-axis method.** Compute the Voronoi/medial axis (OpenVoronoi, or `scipy.spatial.Voronoi` on densely sampled boundary, or Boost.Polygon Voronoi via bindings) and drive the bit along the axis with depth = clearance radius. Gives sharp corners and far fewer moves.
+- **Phase 2: medial-axis method** (done, `"method": "medial"`, `scipy.spatial.Voronoi`). Compute the Voronoi/medial axis (OpenVoronoi, or `scipy.spatial.Voronoi` on densely sampled boundary, or Boost.Polygon Voronoi via bindings) and drive the bit along the axis with depth = clearance radius. Gives sharp corners and far fewer moves.
 - **Flat-bottom V-carve**: cap depth at a max; clear the flat area with a pocket op using an endmill, V-bit only does the walls.
 - Inlay support (male/female) later; it is mostly a depth-offset variant.
 

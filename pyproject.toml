@@ -3,7 +3,7 @@ name = "camcore"
 version = "0.1.0"
 description = "CAM core: 2.5D, V-carve (and later 3D / 4-axis) toolpaths with G-code post-processing"
 requires-python = ">=3.10"
-dependencies = ["shapely>=2.0", "numpy>=1.24", "ezdxf>=1.1", "trimesh>=4"]
+dependencies = ["shapely>=2.0", "numpy>=1.24", "scipy>=1.10", "ezdxf>=1.1", "trimesh>=4"]
 
 [project.optional-dependencies]
 gui = ["PySide6>=6.5"]

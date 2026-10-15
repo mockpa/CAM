@@ -1,0 +1,93 @@
+{
+  "post": "linuxcnc",
+  "tool_library": "tools.json",
+  "stock": {"type": "box", "x": [0, 160], "y": [0, 90], "z": [-18, 0]},
+  "defaults": {
+    "safe_z": 5.0,
+    "ramp_angle": 3.0
+  },
+  "shapes": {
+    "panel": {
+      "type": "rect",
+      "x": 0,
+      "y": 0,
+      "w": 160,
+      "h": 90
+    },
+    "recess": {
+      "type": "rect",
+      "x": 20,
+      "y": 10,
+      "w": 120,
+      "h": 70
+    },
+    "art": {
+      "type": "svg",
+      "file": "sign.svg",
+      "fit_origin": [
+        30,
+        18
+      ]
+    }
+  },
+  "operations": [
+    {
+      "op": "pocket",
+      "shape": "recess",
+      "tool": "em3",
+      "depth": 2,
+      "step_down": 1,
+      "stepover_ratio": 0.45,
+      "feed": 1200,
+      "plunge": 300
+    },
+    {
+      "op": "vcarve",
+      "shape": "art",
+      "tool": "v60",
+      "method": "medial",
+      "entry": "plunge",
+      "top_z": -2,
+      "feed": 900,
+      "max_depth": 3,
+      "clear_tool": "em3",
+      "clear": {
+        "stepover_ratio": 0.45,
+        "feed": 1000
+      }
+    },
+    {
+      "op": "drill",
+      "tool": "em3",
+      "points": [
+        [
+          8,
+          8
+        ],
+        [
+          152,
+          8
+        ],
+        [
+          152,
+          82
+        ],
+        [
+          8,
+          82
+        ]
+      ],
+      "depth": 6,
+      "peck": 2
+    },
+    {
+      "op": "profile",
+      "shape": "panel",
+      "tool": "em3",
+      "side": "outside",
+      "depth": 6,
+      "step_down": 2,
+      "feed": 1200
+    }
+  ]
+}

@@ -177,7 +177,8 @@ function buildPath(kind) {
   for (let i = 0; i < N; i++) {
     if (M[i][0] !== kind) continue;
     const a = P(i - 1), b = P(i);
-    const steps = rotary && a[3] !== b[3] ? Math.min(64, Math.ceil(Math.abs(b[3] - a[3]) / 3)) : 1;
+    // one G93 move can wind many turns of A (a helix): draw it in chords of at most 3 deg
+    const steps = rotary && a[3] !== b[3] ? Math.min(20000, Math.ceil(Math.abs(b[3] - a[3]) / 3)) : 1;
     for (let s = 0; s < steps; s++) {
       const t0 = s / steps, t1 = (s + 1) / steps;
       const q0 = a.map((v, k) => v + (b[k] - v) * t0), q1 = a.map((v, k) => v + (b[k] - v) * t1);
@@ -260,20 +261,42 @@ function profile(d, tl) {
   if (tl.kind === "ball") return r - Math.sqrt(Math.max(0, r * r - d * d));
   return 0;
 }
+function rayInterval(dx, phi, z, tl) {   // [lo, hi] of the ray from the axis inside the tool body, or null
+  const r = tl.diameter / 2, c = Math.cos(phi), s = Math.abs(Math.sin(phi)), rr2 = r * r - dx * dx;
+  if (rr2 < 0 || c <= 1e-12) return null;
+  const fp = s > 1e-12 ? Math.sqrt(rr2) / s : Infinity;
+  const g = rho => rho * c - profile(Math.hypot(dx, rho * s), tl);
+  let roots;
+  if (tl.kind === "vbit") {
+    const kv = 1 / Math.tan((tl.v_angle || 90) * Math.PI / 360);
+    const qa = c * c - kv * kv * s * s, qb = -2 * z * c, qc = z * z - kv * kv * dx * dx, disc = qb * qb - 4 * qa * qc;
+    roots = Math.abs(qa) < 1e-12 ? (qb ? [-qc / qb] : []) : disc < 0 ? [] : [(-qb - Math.sqrt(disc)) / (2 * qa), (-qb + Math.sqrt(disc)) / (2 * qa)];
+  } else if (tl.kind === "ball") {
+    const w = z + r, disc = rr2 - w * w * s * s;
+    roots = disc < 0 ? [] : [w * c - Math.sqrt(disc), w * c + Math.sqrt(disc)];
+  } else roots = [z / c];
+  const tol = 1e-6 * (1 + Math.abs(z));
+  let lo = Infinity, hi = -Infinity;
+  for (const q of roots) if (q >= -tol && q <= fp + tol && Math.abs(g(Math.max(q, 0)) - z) <= tol) { lo = Math.min(lo, q); hi = Math.max(hi, q); }
+  if (g(0) >= z) { lo = 0; hi = Math.max(hi, 0); }
+  if (fp === Infinity || g(fp) >= z) { hi = fp; lo = Math.min(lo, fp); }
+  return lo <= hi ? [Math.max(0, lo), hi] : null;
+}
 function stamp(p, tl) {     // remove material under the tool at p = [x, y, z, a]
   const { nx, ny, x0, y0, res, h } = grid, r = tl.diameter / 2;
   const i0 = Math.max(0, Math.floor((p[0] - r - x0) / res)), i1 = Math.min(nx - 1, Math.ceil((p[0] + r - x0) / res));
   if (i0 > i1) return;
   if (rotary) {
-    const ares = 360 / ny, span = Math.ceil((r / grid.base) * 180 / Math.PI / ares) + 1;
+    // each cell is material from the axis out to h along its ray; a ray whose outer end
+    // lies in the tool body is cut back to where it enters (same model as camcore-verify)
+    const ares = 360 / ny, spanDeg = p[2] > 0 ? Math.atan2(r, p[2]) * 180 / Math.PI : 90;
+    const span = Math.ceil(spanDeg / ares) + 1;
     const jc = Math.round((((p[3] % 360) + 360) % 360) / ares);
     for (let i = i0; i <= i1; i++) for (let dj = -span; dj <= span; dj++) {
-      const j = ((jc + dj) % ny + ny) % ny, dx = x0 + i * res - p[0];
+      const j = ((jc + dj) % ny + ny) % ny, dx = x0 + i * res - p[0], k = i * ny + j;
       let da = (j * ares - p[3]) % 360; da = ((da + 540) % 360) - 180;
-      const d = Math.hypot(dx, da * Math.PI / 180 * grid.base);
-      if (d > r) continue;
-      const z = p[2] + profile(d, tl), k = i * ny + j;
-      if (z < h[k]) { h[k] = z; grid.dirty = true; }
+      const iv = rayInterval(dx, da * Math.PI / 180, p[2], tl);
+      if (iv && iv[0] < h[k] && iv[1] >= h[k] - 1e-9) { h[k] = Math.max(0, iv[0]); grid.dirty = true; }
     }
   } else {
     const j0 = Math.max(0, Math.floor((p[1] - r - y0) / res)), j1 = Math.min(ny - 1, Math.ceil((p[1] + r - y0) / res));

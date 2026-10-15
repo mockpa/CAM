@@ -19,6 +19,12 @@ Checks
 
 Stock removal is simulated on a heightmap (box stock) or a radius map over
 (X, A) (cylinder stock), so rapids over already-cut areas are not flagged.
+Cylinder cells are rays from the axis, filled with material out to their
+radius; the tool body (profile plus shank) meets each ray in one interval, so
+contact and cutting are exact at any depth, also beside the tool at radii
+below the original surface. A ray the body only crosses keeps its full
+length, so the model never holds less material than the real part.
+- tool tip below the rotary centreline (Z < 0) on cylinder stock -> error
 
 This is an independent model, not LinuxCNC's own interpreter; for that, run
 the program through the LinuxCNC sim container in sim/ as well.
@@ -106,8 +112,9 @@ class Stock:
         elif self.kind == "cylinder":
             self.x0, x1 = spec["x"]
             self.radius = spec["diameter"] / 2
-            self.a_res = math.degrees(res / self.radius)
-            nx, na = int(math.ceil((x1 - self.x0) / res)) + 1, int(math.ceil(360 / self.a_res))
+            na = int(math.ceil(360 / math.degrees(res / self.radius)))
+            self.a_res = 360 / na                      # cells divide the full turn exactly
+            nx = int(math.ceil((x1 - self.x0) / res)) + 1
             self.h = np.full((nx, na), float(self.radius))
         else:
             raise ValueError(f"unknown stock type {self.kind}")
@@ -127,14 +134,83 @@ class Stock:
             ys = self.y0 + np.arange(j0, j1 + 1) * self.res
             d = np.hypot(*np.meshgrid(xs - x, ys - y_or_a, indexing="ij"))
             return (slice(i0, i1 + 1), slice(j0, j1 + 1)), d, None
-        # cylinder: angular cells near a, distance measured along the surface at stock radius
-        span = int(math.ceil(math.degrees(r / self.radius) / self.a_res))
-        jc = int(round((y_or_a % 360) / self.a_res))
+        raise AssertionError("cylinder stock uses _ray_cells")
+
+    def _ray_cells(self, x, a, z, r):
+        """Cylinder cells whose ray can meet a tool of radius r with its tip at height z:
+        index, dx and the angle phi (rad) of each cell's ray from the tool axis."""
+        i0 = max(int(math.floor((x - r - self.x0) / self.res)), 0)
+        i1 = min(int(math.ceil((x + r - self.x0) / self.res)), self.h.shape[0] - 1)
+        if i0 > i1:
+            return None
+        # the tool body lies above its tip and within r of its axis: tan(phi) <= r / z
+        span_deg = math.degrees(math.atan2(r, z)) if z > 0 else 90.0
+        span = int(math.ceil(span_deg / self.a_res)) + 1
+        jc = int(round((a % 360) / self.a_res))
         js = np.arange(jc - span, jc + span + 1) % self.h.shape[1]
-        xs = self.x0 + np.arange(i0, i1 + 1) * self.res
-        da = ((js * self.a_res - y_or_a + 180) % 360 - 180)
-        d = np.hypot(*np.meshgrid(xs - x, np.radians(da) * self.radius, indexing="ij"))
-        return (slice(i0, i1 + 1), js), d, None
+        phi = np.radians((js * self.a_res - a + 180) % 360 - 180)
+        dx = self.x0 + np.arange(i0, i1 + 1) * self.res - x
+        dxg, phig = np.meshgrid(dx, phi, indexing="ij")
+        return (slice(i0, i1 + 1), js), dxg, phig
+
+    @staticmethod
+    def _ray_interval(dx, phi, z, tool: dict):
+        """Where each ray from the rotary axis passes through the tool body.
+
+        The ray at angle phi from the tool axis, in the plane at axial offset dx
+        from the tip, has points at lateral rho*|sin(phi)| and height rho*cos(phi)
+        in the tool frame. The body (cutter profile, shank straight up) is convex,
+        so the ray meets it in one interval [lo, hi] of rho; lo > hi where it
+        misses. Its ends are rho = 0, the footprint exit, or roots of
+        g(rho) = rho cos(phi) - profile(d(rho)) = z.
+        """
+        r = tool.get("diameter", 3) / 2
+        kind = tool.get("kind")
+        c, s = np.cos(phi), np.abs(np.sin(phi))
+        rr2 = r * r - dx * dx
+        fp = np.where(s > 1e-12, np.sqrt(np.clip(rr2, 0, None)) / np.where(s > 1e-12, s, 1), np.inf)
+        if kind == "vbit":
+            kv = 1 / math.tan(math.radians(tool.get("v_angle", 90)) / 2)
+            prof = lambda d: kv * d
+        elif kind == "ball":
+            prof = lambda d: r - np.sqrt(np.clip(r * r - d * d, 0, None))
+        else:
+            prof = lambda d: np.zeros_like(d)
+
+        def g(rho):
+            with np.errstate(invalid="ignore"):
+                return rho * c - prof(np.hypot(dx, rho * s))
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            if kind == "vbit":
+                qa, qb, qc = c * c - kv * kv * s * s, -2 * z * c, z * z - kv * kv * dx * dx
+                disc = qb * qb - 4 * qa * qc
+                sq = np.sqrt(np.clip(disc, 0, None))
+                lin = np.abs(qa) < 1e-12
+                r1 = np.where(lin, -qc / np.where(qb != 0, qb, np.nan), (-qb - sq) / (2 * qa))
+                r2 = np.where(lin, np.nan, (-qb + sq) / (2 * qa))
+                r1, r2 = np.where(disc >= 0, r1, np.nan), np.where(disc >= 0, r2, np.nan)
+            elif kind == "ball":
+                w = z + r
+                disc = rr2 - w * w * s * s
+                sq = np.sqrt(np.clip(disc, 0, None))
+                r1, r2 = np.where(disc >= 0, w * c - sq, np.nan), np.where(disc >= 0, w * c + sq, np.nan)
+            else:
+                r1, r2 = z / np.where(c > 1e-12, c, np.nan), np.full_like(c, np.nan)
+        tol = 1e-6 * (1 + abs(z))
+        lo, hi = np.full_like(c, np.inf), np.full_like(c, -np.inf)
+        for root in (r1, r2):
+            ok = np.isfinite(root) & (root >= -tol) & (root <= fp + tol)
+            ok &= np.abs(np.where(ok, g(np.where(ok, root, 0)), np.inf) - z) <= tol
+            lo, hi = np.where(ok, np.minimum(lo, root), lo), np.where(ok, np.maximum(hi, root), hi)
+        at0 = g(np.zeros_like(c)) >= z
+        lo, hi = np.where(at0, 0.0, lo), np.where(at0, np.maximum(hi, 0.0), hi)
+        endless = ~np.isfinite(fp)                       # ray along the tool axis: the shank goes on forever
+        atfp = np.where(endless, c > 1e-12, g(np.where(endless, 0, fp)) >= z)
+        hi = np.where(atfp, fp, hi)
+        lo = np.where(atfp, np.minimum(lo, fp), lo)
+        miss = (rr2 < 0) | (c <= 1e-12)
+        return np.where(miss, np.inf, np.maximum(lo, 0.0)), np.where(miss, -np.inf, hi)
 
     @staticmethod
     def _profile(d, tool: dict):
@@ -147,8 +223,22 @@ class Stock:
         return np.zeros_like(d)
 
     def interference(self, x, y_or_a, z, tool: dict) -> float:
-        """How far material pokes into the cutter body at this position (<= 0: clear)."""
+        """How far material pokes into the cutter body at this position (<= 0: clear).
+
+        Cylinder stock: each cell holds the material from the axis out to h along
+        its ray; the result is how far along a ray it reaches into the body.
+        """
         r = tool.get("diameter", 3) / 2
+        if self.kind == "cylinder":
+            c = self._ray_cells(x, y_or_a, z, r)
+            if c is None:
+                return -math.inf
+            idx, dx, phi = c
+            lo, hi = self._ray_interval(dx, phi, z, tool)
+            hit = lo <= hi
+            if not hit.any():
+                return -math.inf
+            return float((np.minimum(self.h[idx], hi) - lo)[hit].max())
         c = self._cells(x, y_or_a, r)
         if c is None:
             return -math.inf
@@ -160,6 +250,17 @@ class Stock:
 
     def cut(self, x, y_or_a, z, tool: dict):
         r = tool.get("diameter", 3) / 2
+        if self.kind == "cylinder":
+            # a ray whose outer end lies in the body is cut back to where it enters;
+            # one the body only crosses keeps its full length (conservative)
+            c = self._ray_cells(x, y_or_a, z, r)
+            if c is None:
+                return
+            idx, dx, phi = c
+            lo, hi = self._ray_interval(dx, phi, z, tool)
+            sub = self.h[idx]
+            self.h[idx] = np.where((lo < sub) & (hi >= sub - 1e-9), lo, sub)
+            return
         c = self._cells(x, y_or_a, r)
         if c is None:
             return
@@ -205,6 +306,8 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
                 once("error", n, f"{k.upper()} {new[k]:.3f} is outside machine travel "
                      f"({lo - machine.work_offset[k]:.1f} .. {hi - machine.work_offset[k]:.1f} in work coordinates)",
                      ("travel", k))
+        if rotary and min(pos["z"], new["z"]) < 0:
+            once("error", n, f"Z {min(pos['z'], new['z']):.3f} is below the rotary centreline (Z0)", "belowaxis")
         dist = math.dist([pos[k] for k in "xyz"], [new[k] for k in "xyz"])
         if new["a"] != pos["a"]:
             r = abs(pos["z"] + new["z"]) / 2 if rotary else 0.0

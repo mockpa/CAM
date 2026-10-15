@@ -4,30 +4,14 @@ import numpy as np
 import pytest
 import trimesh
 
-from camcore.cylmap import directions, radial_map, tool_map
+from camcore.cylmap import radial_map, tool_map
+from camcore import stl
 from camcore.stl import load_stl
 from camcore.tools import Tool
 
 
 def revolve(rings, n=360):
-    """Closed polygonal solid of revolution about X: rings = [(x, radius), ...].
-
-    Ring vertices sit at the machine angles 0, 360/n, ... (direction u(A)), so a
-    ray cast at a multiple of 360/n degrees passes exactly through a vertex.
-    """
-    u = directions(n)
-    verts = [np.array([x, 0, 0]) + rad * u for x, rad in rings]
-    v = np.vstack(verts + [[[rings[0][0], 0, 0]], [[rings[-1][0], 0, 0]]])
-    c0, c1 = len(v) - 2, len(v) - 1
-    f = []
-    for k in range(len(rings) - 1):
-        for j in range(n):
-            a, b = k * n + j, k * n + (j + 1) % n
-            f += [[a, b, b + n], [a, b + n, a + n]]
-    last = (len(rings) - 1) * n
-    for j in range(n):
-        f += [[c0, (j + 1) % n, j], [c1, last + j, last + (j + 1) % n]]
-    return trimesh.Trimesh(v, f, process=False)
+    return stl.revolve(rings, n)
 
 
 def col(cmap, x):

@@ -1,0 +1,14 @@
+{
+  "post": "linuxcnc",
+  "tool_library": "tools.json",
+  "material": "hardwood",
+  "stock": {"type": "cylinder", "diameter": 30, "x": [-10, 50]},
+  "models": {"pawn": {"file": "pawn.stl"}},
+  "defaults": {"safe_z": 5.0},
+  "operations": [
+    {"id": "rough", "op": "rotary_rough", "model": "pawn", "tool": "em6",
+     "x_range": [0, 51], "floor": 3.0, "stock_to_leave": 0.5, "resolution": 0.5},
+    {"id": "finish", "op": "rotary_finish", "model": "pawn", "tool": "ball3", "after": ["rough"],
+     "strategy": "helical", "stepover": 0.5, "x_range": [0, 49.5], "floor": 3.0, "resolution": 0.25}
+  ]
+}

@@ -43,6 +43,33 @@ def build_shape(spec: dict, base_dir: Path):
     return g
 
 
+def build_model(spec: dict, base_dir: Path):
+    """A mesh for continuous rotary ops: {"file": "x.stl", "rotate_x": 0, "center_yz": false,
+    "x_start": null, "translate": [0, 0, 0]} (stl.place)."""
+    from .stl import load_stl, place
+    return place(load_stl(base_dir / spec["file"]), spec.get("rotate_x", 0.0), spec.get("center_yz", False),
+                 spec.get("x_start"), spec.get("translate", (0.0, 0.0, 0.0)))
+
+
+def continue_a(paths, native):
+    """Shift each native rotary path by whole turns of A so it starts as close as
+    possible to where the previous path left A (no long unwinding moves)."""
+    last = 0.0
+    for tp in paths:
+        a_vals = [m.a for m in tp.moves if m.a is not None]
+        if not a_vals:
+            continue
+        if id(tp) in native:
+            k = round((last - a_vals[0]) / 360.0)
+            if k:
+                for m in tp.moves:
+                    if m.a is not None:
+                        m.a += 360.0 * k
+            a_vals = [m.a for m in tp.moves if m.a is not None]
+        last = a_vals[-1]
+    return paths
+
+
 def run_job(job: dict, base_dir: Path = Path(".")):
     """Build the toolpaths of a job, in cutting order.
 
@@ -58,7 +85,9 @@ def run_job(job: dict, base_dir: Path = Path(".")):
     if "tool_library" in job:
         tools.update(load_library(base_dir / job["tool_library"]))
     tools.update({k: Tool.from_dict({"name": k, **v}) for k, v in job.get("tools", {}).items()})
-    shapes = {k: build_shape(v, base_dir) for k, v in job["shapes"].items()}
+    shapes = {k: build_shape(v, base_dir) for k, v in job.get("shapes", {}).items()}
+    models = {k: build_model(v, base_dir) for k, v in job.get("models", {}).items()}
+    native = set()                           # ids of toolpaths that already carry A (not wrapped)
     defaults = job.get("defaults", {})
     material = job.get("material")
 
@@ -93,6 +122,15 @@ def run_job(job: dict, base_dir: Path = Path(".")):
         if kind == "drill":
             pts = spec.pop("points")
             tp = ops.drill(pts, tool, **spec)
+        elif "model" in spec:
+            model = models[spec.pop("model")]
+            stock = job.get("stock") or {}
+            if "stock_diameter" not in spec:
+                if stock.get("type") != "cylinder":
+                    raise ValueError(f"{kind} needs a cylinder stock or a stock_diameter")
+                spec["stock_diameter"] = stock["diameter"]
+            tp = fn(model, tool, **spec)
+            native.add(id(tp))
         else:
             shape = shapes[spec.pop("shape")]
             clear = spec.pop("clear_tool", None)
@@ -126,8 +164,9 @@ def run_job(job: dict, base_dir: Path = Path(".")):
     rotary = job.get("rotary")
     if rotary:
         safe = defaults.get("safe_z", 5.0)
-        paths = [ops.wrap(tp, rotary["diameter"], safe) for tp in paths]
-    return paths
+        wrapped = [tp if id(tp) in native else ops.wrap(tp, rotary["diameter"], safe) for tp in paths]
+        paths = wrapped
+    return continue_a(paths, native)
 
 
 def order_paths(nodes, minimize_changes: bool):

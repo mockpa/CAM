@@ -156,10 +156,29 @@ def test_linuxcnc_emits_a_axis_and_grbl_refuses_it():
     from camcore.toolpath import Toolpath
     tp = Toolpath("wrap", EM)
     tp.rapid(z=5)
+    tp.rapid(x=0, a=0)
     tp.feed(x=10, a=90, f=500)
     assert "G1 X10 A90" in get_post("linuxcnc").emit([tp])
     with pytest.raises(ValueError):
         get_post("grbl").emit([tp])
+
+
+def test_g93_names_every_axis_first_and_refuses_feeds_from_unknown_positions():
+    # after a tool change X and A are wherever the last path left them: X0 A0 must be written
+    from camcore.toolpath import Toolpath
+    tp = Toolpath("r", EM)
+    tp.rapid(z=20)
+    tp.rapid(x=0, a=0)
+    tp.feed(z=15, f=500)                                   # 5 mm at 500 mm/min = 0.01 min
+    tp.feed(a=90, f=1000)                                  # quarter turn at r15: 23.5619 mm
+    g = get_post("linuxcnc").emit([tp]).splitlines()
+    i = g.index("G93 (inverse-time feed for rotary moves)")
+    assert g[i + 1:i + 6] == ["G0 Z20", "G0 X0 A0", "G1 Z15 F100", "G1 A90 F42.4413", "G94"]
+    bad = Toolpath("r", EM)
+    bad.rapid(z=20)
+    bad.feed(x=10, a=90, f=500)
+    with pytest.raises(ValueError, match="before X, Z and A are known"):
+        get_post("linuxcnc").emit([bad])
 
 
 def test_explicit_tool_number_is_used():

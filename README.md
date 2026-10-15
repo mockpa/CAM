@@ -52,11 +52,26 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
     Open pieces are joined end to end; a contour that still does not close is an error naming where, unless
     `ignore_open`. Text, dimensions and hatches are ignored. See `examples/bracket_job.json`.
   - Curves are flattened with chords within 0.005 mm, so they come back out as G2/G3 arcs.
-- **Rotary from STL** (groundwork, no operations yet): `stl.load_stl` reads a mesh (trimesh) placed with the
-  rotary axis on its X axis; `cylmap.radial_map` samples r(x, A), the outermost radius of the model at each X and
-  machine angle, and `cylmap.tool_map` dilates it by a flat, ball or V-bit cutter into the lowest tip radius that
-  does not gouge. At machine angle A the tool looks at the model along (0, -sin A, cos A), the same mapping as the
-  viewer and the verify cylinder stock.
+- **Rotary from STL** (continuous 4th axis, DeskProto-style): `"models": {"pawn": {"file": "pawn.stl"}}` loads
+  a mesh lying on the rotary (X) axis; `rotate_x`, `center_yz`, `x_start` and `translate` place it. Operations
+  take `"model"` instead of `"shape"` and the stock diameter from the job's cylinder stock:
+  - `rotary_rough`: Z levels of `step_down` from the stock radius inwards, one helical pass per level over the X
+    span that still needs cutting, leaving `stock_to_leave` (flat or ball end mills). A turns the other way on
+    each level, so it does not wind up.
+  - `rotary_finish`: `strategy` `"helical"` (smoothest), `"a_raster"` (full turns at fixed X) or `"x_raster"`
+    (sweeps along X, `stepover_deg` apart).
+  - Common: `x_range` (tool centre limits, default the model's X extent), `floor` (never below this radius:
+    keeps a support stub at a free end), `resolution` (grid in mm; finer = closer to steep walls), `stepover`
+    or `stepover_ratio`. Every pass enters with a one-turn ramp; tools that are not centre-cutting never
+    descend steeper than `max_descent` (30 deg).
+  - Paths never gouge the sampled model: they follow a max envelope of the grid of no-gouge tip heights. On
+    steep flanks this leaves up to about slope x `resolution` of material.
+  - Output is X/A/Z in G93 inverse time; one G1 can wind many turns where the profile is straight.
+  See `examples/pawn_job.json` (`examples/make_pawn.py` builds the STL): verify and the LinuxCNC sim pass,
+  about 6 min on the machine.
+  Underneath: `cylmap.radial_map` samples r(x, A), the model's outermost radius at each X and machine angle;
+  `cylmap.tool_map` turns it into the lowest no-gouge tip radius for a flat, ball or V-bit cutter. At machine
+  angle A the tool looks at the model along (0, -sin A, cos A), the same mapping as the viewer and verify.
 - **Post**: LinuxCNC (default: T/M6 + G43 tool changes, A rotary axis, G64 blending) and GRBL 1.1 (pauses with `M0` on tool change, no A axis).
 - **Arc output** (LinuxCNC): runs of feed moves become G2/G3 arcs (helical where Z changes) when an arc stays
   within 0.01 mm of every original segment, at most 180 deg per arc. The sign example shrinks from about 16000 to
@@ -103,7 +118,7 @@ pytest
 camcore/
   tools.py      tool definitions (flat, ball, V-bit) and their profiles
   toolpath.py   Toolpath IR: rapid/feed moves with X Y Z A
-  ops/          profile, pocket, vcarve, drill (geometry in, IR out)
+  ops/          profile, pocket, vcarve, drill, wrap, rotary_rough/finish (geometry in, IR out)
   post/         IR to G-code; base class, LinuxCNC, GRBL
   svg.py        SVG import
   dxf.py        DXF import
@@ -119,4 +134,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-medial-axis V-carve, rotary operations from STL (roughing, finishing, wizard), indexed 3+1, 3-axis 3D, GUI.
+medial-axis V-carve, rotary wizard, indexed 3+1, 3-axis 3D, GUI.

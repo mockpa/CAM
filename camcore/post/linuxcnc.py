@@ -156,19 +156,26 @@ class LinuxCncPost(PostProcessor):
 
     def _inverse_time_moves(self, tp: Toolpath) -> list[str]:
         """With Z0 on the rotary centreline, the surface speed of an A move is
-        r * dA; G93 lets every G1 run at its true surface feed."""
+        r * dA; G93 lets every G1 run at its true surface feed.
+
+        Where the machine stands at the start is unknown (after a tool change it
+        is wherever the last path left it), so each axis is written the first
+        time the path names it, even if the value looks unchanged."""
         out = []
-        pos = {"x": 0.0, "z": 0.0, "a": 0.0}
+        pos = {"x": None, "z": None, "a": None}
         for m in tp.moves:
-            new = {k: getattr(m, k) if getattr(m, k) is not None else pos[k] for k in pos}
-            words = [f"{k.upper()}{self.fmt(new[k])}" for k in ("x", "z", "a")
-                     if getattr(m, k) is not None and abs(new[k] - pos[k]) >= 10 ** -self.decimals]
             if m.y is not None:
                 raise ValueError("wrapped toolpaths must not use Y")
+            new = {k: getattr(m, k) if getattr(m, k) is not None else pos[k] for k in pos}
+            words = [f"{k.upper()}{self.fmt(new[k])}" for k in ("x", "z", "a")
+                     if getattr(m, k) is not None
+                     and (pos[k] is None or abs(new[k] - pos[k]) >= 10 ** -self.decimals)]
             if words:
                 if m.kind == "rapid":
                     out.append("G0 " + " ".join(words))
                 else:
+                    if None in pos.values():
+                        raise ValueError(f"{tp.name}: feed move before X, Z and A are known")
                     r = abs(pos["z"] + new["z"]) / 2
                     dist = math.sqrt((new["x"] - pos["x"]) ** 2 + (new["z"] - pos["z"]) ** 2
                                      + (r * math.radians(new["a"] - pos["a"])) ** 2)

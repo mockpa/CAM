@@ -9,8 +9,9 @@ from camcore.job import job_to_gcode
 from camcore.post import get_post
 from camcore.tools import Tool
 
-EM = Tool("em6", 6.0)
-VBIT = Tool("v90", 12.0, kind="vbit", v_angle=90)
+EM = Tool("em6", 6.0)                                  # not centre-cutting: must never plunge
+EM_CC = Tool("em6cc", 6.0, center_cutting=True)
+VBIT = Tool("v90", 12.0, kind="vbit", v_angle=90, center_cutting=True)
 
 
 def feed_xy(tp):
@@ -30,8 +31,8 @@ def test_profile_outside_stays_one_radius_away():
     tp = ops.profile(sq, EM, depth=3, step_down=1, side="outside")
     for x, y, z in feed_xy(tp):
         assert sq.exterior.distance(Point(x, y)) == pytest.approx(3.0, abs=0.05)
-    zs = sorted({round(z, 6) for *_, z in feed_xy(tp)})
-    assert zs == [-3.0, -2.0, -1.0]
+    zs = {round(z, 6) for *_, z in feed_xy(tp)}
+    assert {-3.0, -2.0, -1.0} <= zs and min(zs) == -3.0 and max(zs) <= 0.0
 
 
 def test_profile_inside_and_on():
@@ -57,7 +58,7 @@ def test_pocket_clears_whole_area_and_never_gouges_wall():
 
 def test_vcarve_depth_matches_distance_to_edge():
     sq = box(0, 0, 10, 10)
-    tp = ops.vcarve(sq, VBIT, step=0.25)
+    tp = ops.vcarve(sq, VBIT, step=0.25, entry="plunge")
     pts = feed_xy(tp)
     assert pts
     for x, y, z in pts:
@@ -67,6 +68,14 @@ def test_vcarve_depth_matches_distance_to_edge():
     assert min(z for *_, z in pts) == pytest.approx(-5.0, abs=0.3)
     # finishing (shallowest) pass runs last
     assert pts[-1][2] == pytest.approx(-0.25, abs=1e-6)
+
+
+def test_vcarve_ramps_never_cut_deeper_than_the_v_allows():
+    sq = box(0, 0, 10, 10)
+    pts = feed_xy(ops.vcarve(sq, VBIT, step=0.25))          # default entry: ramp
+    for x, y, z in pts:
+        assert -z <= sq.exterior.distance(Point(x, y)) + 0.05
+    assert min(z for *_, z in pts) == pytest.approx(-5.0, abs=0.3)
 
 
 def test_vcarve_respects_bit_size_and_max_depth():
@@ -83,9 +92,11 @@ def test_vcarve_rejects_flat_tool():
 
 
 def test_drill_pecks():
-    tp = ops.drill([(1, 2)], EM, depth=5, peck=2)
+    tp = ops.drill([(1, 2)], EM_CC, depth=5, peck=2)
     depths = [m.z for m in tp.moves if m.kind == "feed"]
     assert depths == [-2, -4, -5]
+    with pytest.raises(ValueError, match="center_cutting"):
+        ops.drill([(1, 2)], EM, depth=5)
 
 
 def test_grbl_output_is_well_formed():
@@ -125,14 +136,15 @@ def test_flat_bottom_vcarve_clears_the_middle(tmp_path):
     paths = run_job(*load_job(f))
     assert [p.name for p in paths] == ["vcarve-clear", "vcarve"]
     clear = feed_xy(paths[0])
-    assert {round(z, 6) for *_, z in clear} == {-2.0}
+    zs = {round(z, 6) for *_, z in clear}
+    assert min(zs) == -2.0 and max(zs) <= 0.0                # entry moves go between 0 and -2
     assert LineString([(x, y) for x, y, _ in clear]).distance(Point(30, 15)) < 1.5   # centre gets cut
 
 
 def test_linuxcnc_tool_changes_and_offsets():
-    a = ops.profile(box(0, 0, 10, 10), EM, depth=1, step_down=1)
+    a = ops.profile(box(0, 0, 10, 10), EM_CC, depth=1, step_down=1)
     b = ops.vcarve(box(0, 0, 10, 10), VBIT, step=1)
-    c = ops.drill([(5, 5)], EM, depth=2)
+    c = ops.drill([(5, 5)], EM_CC, depth=2)
     lines = get_post("linuxcnc").emit([a, b, c]).splitlines()
     assert lines[0] == "%" and lines[-1] == "%" and "M2" in lines
     changes = [l.split(" (")[0] for l in lines if " M6" in l]
@@ -151,7 +163,7 @@ def test_linuxcnc_emits_a_axis_and_grbl_refuses_it():
 
 
 def test_explicit_tool_number_is_used():
-    t = Tool("em6", 6.0, number=7)
+    t = Tool("em6", 6.0, number=7, center_cutting=True)
     g = get_post("linuxcnc").emit([ops.drill([(0, 0)], t, depth=1)])
     assert "T7 M6" in g and "G43 H7" in g
 
@@ -166,7 +178,7 @@ def test_atc_prefetches_next_tool():
 
 
 def test_wrap_maps_y_to_a_and_depth_to_radius():
-    flat = ops.profile(box(0, 0, 10, math.pi * 20 / 4), EM, depth=1, step_down=1, side="on")
+    flat = ops.profile(box(0, 0, 10, math.pi * 20 / 4), EM_CC, depth=1, step_down=1, side="on", entry="plunge")
     w = ops.wrap(flat, diameter=20, safe_z=5)
     assert all(m.y is None for m in w.moves)
     a_vals = [m.a for m in w.moves if m.a is not None]
@@ -200,3 +212,46 @@ def test_wrap_example_runs():
     from camcore.job import job_to_gcode
     g = job_to_gcode(Path(__file__).parent.parent / "examples" / "wrap_job.json")
     assert " A" in g and " Y" not in g
+
+
+def test_profile_ramp_gcode_is_pinned():
+    # ramp angle atan(1/5): 1 mm down over 5 mm along the contour (climb = clockwise from (10, 0))
+    tp = ops.profile(box(0, 0, 10, 10), Tool("em6", 6.0, number=1), depth=2, step_down=1, side="on",
+                     ramp_angle=math.degrees(math.atan(0.2)), feed=600, plunge=200)
+    g = get_post("linuxcnc").emit([tp]).splitlines()
+    assert g[g.index("M3 S18000") + 1:g.index("M5 M9")] == [
+        "G0 Z5", "G0 X10 Y0", "G0 Z1", "G1 Z0 F200",
+        "G1 X5 Z-1 F600", "G1 X0", "G1 Y10", "G1 X10", "G1 Y0", "G1 X5",     # ramp, full loop at -1
+        "G1 X0 Z-2", "G1 Y10", "G1 X10", "G1 Y0", "G1 X5", "G1 X0",          # ramp on, full loop at -2
+        "G0 Z5"]
+
+
+def test_entries_are_never_steeper_than_ramp_angle():
+    shape = box(0, 0, 40, 25).difference(Point(20, 12.5).buffer(5))
+    for angle in (2.0, 5.0):
+        for tp in (ops.pocket(shape, EM, depth=3, step_down=1, ramp_angle=angle),                # helix
+                   ops.pocket(shape, EM, depth=3, step_down=1, ramp_angle=angle, entry="ramp"),
+                   ops.profile(shape, EM, depth=3, step_down=1, ramp_angle=angle),
+                   ops.vcarve(shape, VBIT, step=0.5, ramp_angle=angle)):
+            pos = {"x": 0.0, "y": 0.0, "z": 10.0}
+            for m in tp.moves:
+                new = {a: getattr(m, a) if getattr(m, a) is not None else pos[a] for a in "xyz"}
+                horiz = math.hypot(new["x"] - pos["x"], new["y"] - pos["y"])
+                if m.kind == "feed" and new["z"] < pos["z"] and horiz > 1e-9:
+                    assert (pos["z"] - new["z"]) / horiz <= math.tan(math.radians(angle)) + 1e-6, tp.name
+                pos = new
+
+
+def test_pocket_helix_stays_inside_and_plunge_needs_permission():
+    shape = box(0, 0, 40, 25)
+    tp = ops.pocket(shape, EM, depth=2, step_down=2)
+    inner = shape.buffer(-EM.radius + 1e-6)
+    assert all(inner.contains(Point(x, y)) for x, y, _ in feed_xy(tp))
+    with pytest.raises(ValueError, match="center_cutting"):
+        ops.pocket(shape, EM, depth=2, step_down=2, entry="plunge")
+    with pytest.raises(ValueError, match="center_cutting"):
+        ops.profile(shape, EM, depth=2, step_down=2, entry="plunge")
+    with pytest.raises(ValueError, match="ramp_angle"):
+        ops.profile(shape, EM, depth=2, step_down=2, ramp_angle=60)
+    plunged = ops.pocket(shape, EM_CC, depth=2, step_down=2, entry="plunge")
+    assert any(m.kind == "feed" and m.x is None and m.y is None and m.z == -2 for m in plunged.moves)

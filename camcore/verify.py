@@ -6,6 +6,8 @@ Checks
 - rapid moves (G0) through stock that has not been cut yet  -> crash
 - cutting with the spindle stopped                          -> crash
 - cutting deeper than the tool's flute length               -> warning
+- feeding into material steeper than 45 deg with a tool that
+  is not marked center_cutting (a plunge)                   -> error
 - tool numbers missing from the machine's tool table / ATC  -> error
 - cutting without a tool or without G43 length offset       -> error / warning
 - A-axis moves on a machine without one, G93 moves without F -> error
@@ -57,7 +59,7 @@ class Machine:
     work_offset: dict = field(default_factory=lambda: {"x": 0, "y": 0, "z": -100})
     has_a: bool = True
     rapid_rate: float = 5000.0                      # mm/min, used for time estimates
-    tools: dict = field(default_factory=dict)       # number -> {"diameter", "kind", "v_angle", "flute_length"}
+    tools: dict = field(default_factory=dict)       # number -> {"diameter", "kind", "v_angle", "flute_length", "center_cutting"}
 
     @staticmethod
     def load(path) -> "Machine":
@@ -238,6 +240,10 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
             if rotary:
                 seg = max(seg, abs(new["a"] - pos["a"]) / 360 * 2 * math.pi * max(new["z"], 1))
             steps = max(1, int(seg / (res / 2)))
+            horiz = math.hypot(new["x"] - pos["x"], new["y"] - pos["y"])
+            if rotary:
+                horiz = math.hypot(horiz, math.radians(new["a"] - pos["a"]) * max(new["z"], 1))
+            plunging = kind == "feed" and pos["z"] - new["z"] > horiz + 1e-9   # steeper than 45 deg down
             for s in range(1, steps + 1):
                 if retract:      # moving straight up out of the cut never hits anything
                     break
@@ -254,6 +260,9 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
                     if not spindle:
                         issues.append(Issue("error", n, "CRASH: cutting with the spindle stopped"))
                         break
+                    if plunging and not tinfo.get("center_cutting"):
+                        once("error", n, f"T{tool} plunges into material but is not marked center_cutting "
+                             f"(ramp or helix in, or mark the tool)", ("plunge", tool))
                     if not offset_on:
                         once("warning", n, f"cutting with T{tool} but no G43 tool length offset", ("g43", tool))
                     fl = tinfo.get("flute_length")

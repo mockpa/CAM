@@ -6,7 +6,13 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
 - **Profile**: inside / outside / on-line, multiple step-downs, climb or conventional.
 - **Pocket**: contour-parallel clearing with islands, step-downs, stepover as a fraction of tool diameter.
 - **V-carve**: offset-based, depth follows the distance to the edge; optional `max_depth` + `clear_tool` for flat-bottom carving (an endmill clears the floor first).
-- **Drill**: peck drilling.
+- **Drill**: peck drilling (centre-cutting tools only).
+- **Entry moves**: nothing plunges straight down by default. Pockets enter on a helix (falling back to a ramp
+  along the loop where it does not fit) and link from loop to loop at depth; profiles and V-carve ramp along the
+  contour. Per operation: `"entry": "helix" | "ramp" | "plunge"`, `"ramp_angle"` (max degrees, default 3, at most
+  30), `"helix_diameter"` (pockets, default 0.8 x tool diameter). `"plunge"` is refused unless the tool is
+  marked `"center_cutting": true` in the library. `camcore-verify` independently reports any feed into material
+  steeper than 45 deg with a tool that is not centre-cutting.
 - **Rotary (wrapped)**: `"rotary": {"diameter": 40}` wraps any job around the A axis (Y becomes A, Z0 on the axis centreline), with G93 inverse-time feeds.
 - **Tool library / ATC**: `"tool_library": "tools.json"` with tool numbers; LinuxCNC post emits `Tn M6`, `G43 Hn` and stages the next tool; `"tool_order": "minimize_changes"` groups ops by tool.
 - **Import**: SVG (path with M/L/H/V/C/Q/Z, polygon, polyline, rect, circle; even-odd holes), plus rect/circle/polygon/union/difference shapes in the job file.
@@ -63,4 +69,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-Arcs (G2/G3) and arc fitting, tabs, lead-in/out, ramp entry (it currently plunges straight down; use a centre-cutting bit), SVG transforms, DXF import, medial-axis V-carve, rotary from STL, indexed 3+1, 3-axis 3D, simulation, GUI.
+Arcs (G2/G3) and arc fitting, tabs, lead-in/out, SVG transforms, DXF import, medial-axis V-carve, rotary from STL, indexed 3+1, 3-axis 3D, simulation, GUI.

@@ -3,13 +3,13 @@ from pathlib import Path
 from camcore.verify import Machine, machine_from_library, run
 
 EX = Path(__file__).parent.parent / "examples"
-TOOLS = {1: {"diameter": 6, "kind": "flat", "flute_length": 10}}
+TOOLS = {1: {"diameter": 6, "kind": "flat", "flute_length": 10, "center_cutting": True}}
 BOX = {"type": "box", "x": [0, 50], "y": [0, 50], "z": [-20, 0]}
 HEAD = "G21 G90\nT1 M6\nG43 H1\nM3 S10000\nG0 Z5\n"
 
 
 def check(body, stock=BOX, **mkw):
-    m = Machine(tools=dict(TOOLS), **mkw)
+    m = Machine(**{"tools": dict(TOOLS), **mkw})
     issues, motions, _ = run(HEAD + body + "M5\nM2\n", m, stock)
     return [i.message for i in issues if i.level == "error"], [i.message for i in issues if i.level == "warning"]
 
@@ -90,3 +90,35 @@ def test_printnc_profile_runs_examples_and_enforces_its_travel():
     assert any("outside machine travel" in e for e in errors)
     errors, _ = check("G0 X1015\n", travel=m.travel, work_offset=m.work_offset)
     assert errors == []
+
+
+def test_plunge_needs_a_center_cutting_tool():
+    plain = {1: {**TOOLS[1], "center_cutting": False}}
+    body = "G0 X10 Y10\nG1 Z-2 F300\nG0 Z5\n"
+    assert check(body, tools=plain)[0] == [
+        "T1 plunges into material but is not marked center_cutting (ramp or helix in, or mark the tool)"]
+    assert check(body)[0] == []                                     # centre-cutting tool may plunge
+    # a 3 deg ramp (2 mm down over 38.16 mm) is fine for any tool
+    assert check("G0 X10 Y10\nG1 Z0 F300\nG1 X48.16 Z-2 F600\nG0 Z5\n", tools=plain)[0] == []
+    # feeding straight down where the ramp already cut to -2 is not a plunge into material ...
+    ramp = "G0 X10 Y10\nG1 Z0 F300\nG1 X48.16 Z-2 F600\nG0 Z5\n"
+    assert check(ramp + "G0 X48.16\nG1 Z-2 F300\nG0 Z5\n", tools=plain)[0] == []
+    # ... but at X20 the ramp was only 0.52 mm deep, so going to -2 there is one
+    assert len(check(ramp + "G0 X20\nG1 Z-2 F300\nG0 Z5\n", tools=plain)[0]) == 1
+
+
+def test_ops_never_plunge_with_a_non_center_cutting_tool():
+    from shapely.geometry import Point, box
+    from camcore import ops
+    from camcore.post import get_post
+    from camcore.tools import Tool
+    em = Tool("em6", 6.0, number=1)                       # not centre-cutting
+    shape = box(0, 0, 40, 25).difference(Point(20, 12.5).buffer(5))
+    paths = [ops.pocket(shape, em, depth=4, step_down=1),
+             ops.pocket(shape, em, depth=4, step_down=1, entry="ramp"),
+             ops.profile(box(0, 0, 40, 25), em, depth=4, step_down=2)]
+    m = Machine(tools={1: {"diameter": 6, "kind": "flat", "flute_length": 20}},
+                work_offset={"x": 50, "y": 50, "z": -100})
+    for tp in paths:
+        issues, _, _ = run(get_post("linuxcnc").emit([tp]), m, {"type": "box", "x": [-10, 50], "y": [-10, 35], "z": [-20, 0]})
+        assert [str(i) for i in issues] == [], tp.name

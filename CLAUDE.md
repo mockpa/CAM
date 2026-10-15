@@ -39,7 +39,8 @@ Pipeline: JSON job → `job.run_job` → list of `Toolpath` (IR) → `post.get_p
 ## Conventions
 - Units: mm and degrees everywhere internally.
 - Machine conventions: rotary A turns around X; Z0 on the rotary centreline for rotary jobs; Z0 at the stock top for flat jobs.
-- Tools come from `examples/tools.json`-style libraries; `number` is the ATC pocket and the LinuxCNC tool number.
+- Tools come from `examples/tools.json`-style libraries; `number` is the ATC pocket and the LinuxCNC tool number. `center_cutting` (default false) gates every straight plunge.
+- Ops never plunge into material unless `entry="plunge"` and the tool is centre-cutting: entries live in `camcore/ops/entry.py` (ramp along the contour, helix for pockets). verify enforces the same rule independently.
 - Every new op needs: a unit test on geometry (depths, offsets), a run through `camcore.verify.run` with zero errors, and an example job.
 - Never weaken a verify check to make a test pass. If a check is wrong, fix the check and add a test that shows why.
 - Generated G-code must pass `camcore check` (with the sim) before it is called done.

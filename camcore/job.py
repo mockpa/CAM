@@ -13,6 +13,8 @@ from .post import get_post
 from .svg import load_svg
 from .tools import Tool, load_library
 
+ENTRY_KEYS = ("entry", "ramp_angle", "helix_diameter")
+
 
 def build_shape(spec: dict, base_dir: Path):
     t = spec["type"]
@@ -44,12 +46,15 @@ def run_job(job: dict, base_dir: Path = Path(".")):
     shapes = {k: build_shape(v, base_dir) for k, v in job["shapes"].items()}
     defaults = job.get("defaults", {})
     paths = []
-    for spec in job["operations"]:
-        spec = {**defaults, **spec}
+    for spec_own in job["operations"]:
+        spec = {**defaults, **spec_own}
         kind = spec.pop("op")
         tool = tools[spec.pop("tool")]
         rpm = spec.pop("rpm", 18000)
         if kind == "drill":
+            for k in ENTRY_KEYS:
+                if k in defaults and k not in spec_own:
+                    spec.pop(k)
             pts = spec.pop("points")
             tp = ops.drill(pts, tool, **spec)
         else:

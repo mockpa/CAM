@@ -13,6 +13,7 @@ class Tool:
     v_angle: float = 90.0       # included angle in degrees, vbit only
     flute_length: float = 20.0
     number: int | None = None   # tool table number on the controller
+    center_cutting: bool = False  # may plunge straight down (only where an op allows it)
 
     @property
     def radius(self) -> float:

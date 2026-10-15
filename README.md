@@ -52,6 +52,11 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
     Open pieces are joined end to end; a contour that still does not close is an error naming where, unless
     `ignore_open`. Text, dimensions and hatches are ignored. See `examples/bracket_job.json`.
   - Curves are flattened with chords within 0.005 mm, so they come back out as G2/G3 arcs.
+- **Rotary from STL** (groundwork, no operations yet): `stl.load_stl` reads a mesh (trimesh) placed with the
+  rotary axis on its X axis; `cylmap.radial_map` samples r(x, A), the outermost radius of the model at each X and
+  machine angle, and `cylmap.tool_map` dilates it by a flat, ball or V-bit cutter into the lowest tip radius that
+  does not gouge. At machine angle A the tool looks at the model along (0, -sin A, cos A), the same mapping as the
+  viewer and the verify cylinder stock.
 - **Post**: LinuxCNC (default: T/M6 + G43 tool changes, A rotary axis, G64 blending) and GRBL 1.1 (pauses with `M0` on tool change, no A axis).
 - **Arc output** (LinuxCNC): runs of feed moves become G2/G3 arcs (helical where Z changes) when an arc stays
   within 0.01 mm of every original segment, at most 180 deg per arc. The sign example shrinks from about 16000 to
@@ -101,6 +106,9 @@ camcore/
   ops/          profile, pocket, vcarve, drill (geometry in, IR out)
   post/         IR to G-code; base class, LinuxCNC, GRBL
   svg.py        SVG import
+  dxf.py        DXF import
+  stl.py        STL import (rotary)
+  cylmap.py     cylindrical heightmap r(x, A) of a mesh and its tool dilation
   job.py        JSON job format -> toolpaths
   preview.py    SVG preview
   verify.py     virtual dry run: machine + stock model and checks
@@ -111,4 +119,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-medial-axis V-carve, rotary from STL, indexed 3+1, 3-axis 3D, GUI.
+medial-axis V-carve, rotary operations from STL (roughing, finishing, wizard), indexed 3+1, 3-axis 3D, GUI.

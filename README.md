@@ -1,6 +1,6 @@
 # camcore
 
-Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and V-carve toolpaths with LinuxCNC (and GRBL) output. 3D and 4-axis come next.
+Python core for a CAM application ([the plan](docs/PLAN.md)): 2.5D, V-carve, 3-axis 3D and 4-axis (wrapped, indexed and continuous rotary) toolpaths with LinuxCNC (and GRBL) output.
 
 ## What works today
 - **Profile**: inside / outside / on-line, multiple step-downs, climb or conventional. Each contour is cut
@@ -103,6 +103,24 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
   (`camcore rotary-wizard --help`); `--yes` takes the suggested answer for the rest:
   `camcore rotary-wizard examples/pawn.stl --yes --preset fine --strategy x_raster`.
   The job file is a normal job: edit it and run `camcore check` on it again.
+- **3-axis 3D from STL**: `surface_rough` and `surface_finish` on a model in machine coordinates (box stock,
+  Z0 on top; a model takes `"xy_start": [x, y]` and `"z_top": z` to place it). Cutter locations come from
+  [OpenCAMLib](https://github.com/aewallin/opencamlib) (conda-forge, see `environment.yml`), exact against the
+  triangles for flat, ball, bull-nose (`"kind": "bull", "corner_radius": 1`) and V cutters. See
+  `examples/relief_job.json` (made by `examples/make_relief.py`).
+  - `surface_rough`: Z levels `step_down` apart from the stock top down to the model plus `stock_to_leave`
+    (`floor` overrides the lowest level). Each level is the boundary (default: the stock) minus the waterline of
+    the cutter grown by the leave, cleared like a pocket (helix or ramp entries, links at depth).
+  - `surface_finish` `"strategy": "raster"`: zigzag passes `stepover` apart at `angle` degrees from X, dropped
+    onto the model. Where the needed height bends (edges, walls) a pass is split until a straight move is within
+    `tolerance` (0.005 mm) of it, and decimation never takes a move under a computed point. Best on shallow
+    areas; a tool that is not centre-cutting never descends steeper than `max_descent`.
+  - `surface_finish` `"strategy": "waterline"`: climb-milled contours at Z levels `step_down` apart over
+    `z_range`, each entered by a ramp along the contour. Best on steep walls; it leaves flat areas alone, so
+    pair it with a raster pass (limit both with `"boundary": [x0, y0, x1, y1]`, the tool centre's area).
+  - OpenCAMLib mishandles exactly vertical triangles (contours grew spikes many mm long), so they are left out
+    of what it sees, which is exact for closed meshes, and every waterline point is checked with the
+    drop-cutter before use: a bad contour stops the job. Use closed (watertight) STL files.
 - **Post**: LinuxCNC (default: T/M6 + G43 tool changes, A rotary axis, G64 blending) and GRBL 1.1 (pauses with `M0` on tool change, no A axis).
 - **Arc output** (LinuxCNC): runs of feed moves become G2/G3 arcs (helical where Z changes) when an arc stays
   within 0.01 mm of every original segment, at most 180 deg per arc. The sign example shrinks from about 16000 to
@@ -177,17 +195,19 @@ pytest
 ## Layout
 ```
 camcore/
-  tools.py      tool definitions (flat, ball, V-bit) and their profiles
+  tools.py      tool definitions (flat, ball, bull nose, V-bit) and their profiles
   toolpath.py   Toolpath IR: rapid/feed moves with X Y Z A
-  ops/          profile, pocket, vcarve, drill, wrap, index, rotary_rough/finish (geometry in, IR out)
+  ops/          profile, pocket, vcarve, drill, wrap, index, rotary_rough/finish,
+                surface_rough/finish (geometry in, IR out)
   post/         IR to G-code; base class, LinuxCNC, GRBL
   svg.py        SVG import
   dxf.py        DXF import
-  stl.py        STL import (rotary)
+  stl.py        STL import
   wizard.py     camcore rotary-wizard (guided rotary job from an STL)
   project.py    job files as the desktop app edits them (no Qt)
   gui/          camcore-gui: PySide6 desktop app (editing and display only)
   cylmap.py     cylindrical heightmap r(x, A) of a mesh and its tool dilation
+  surface.py    3-axis drop-cutter and waterline on a mesh (OpenCAMLib wrapper)
   job.py        JSON job format -> toolpaths
   preview.py    SVG preview
   verify.py     virtual dry run: machine + stock model and checks
@@ -198,4 +218,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-medial-axis V-carve, 3-axis 3D, a 2D preview of shapes in the app.
+medial-axis V-carve, adaptive clearing, rest machining after 3D roughing, a 2D preview of shapes in the app.

@@ -265,6 +265,10 @@ function profile(d, tl) {
   const r = tl.diameter / 2;
   if (tl.kind === "vbit") return d / Math.tan((tl.v_angle || 90) * Math.PI / 360);
   if (tl.kind === "ball") return r - Math.sqrt(Math.max(0, r * r - d * d));
+  if (tl.kind === "bull") {
+    const rc = tl.corner_radius || 0, e = Math.max(0, d - (r - rc));
+    return rc - Math.sqrt(Math.max(0, rc * rc - e * e));
+  }
   return 0;
 }
 function barRadius(S, uy, uz) {     // distance from the axis to the bar's edge along (uy, uz)
@@ -357,8 +361,15 @@ function buildTool(t) {
     toolGroup.children[0].rotation.x = -Math.PI / 2;
     add(new THREE.CylinderGeometry(r, r, 20, 32), shank, hcone + 10);
   } else {
-    if (tl.kind === "ball") { const s = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), mat); s.position.z = r; toolGroup.add(s); }
-    add(new THREE.CylinderGeometry(r, r, flute, 32), mat, (tl.kind === "ball" ? r : 0) + flute / 2);
+    let tipH = 0;
+    if (tl.kind === "ball") { const s = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), mat); s.position.z = r; toolGroup.add(s); tipH = r; }
+    if (tl.kind === "bull") {       // torus corner around a flat bottom disc
+      const rc = tl.corner_radius || 0;
+      const tor = new THREE.Mesh(new THREE.TorusGeometry(r - rc, rc, 12, 32), mat); tor.position.z = rc; toolGroup.add(tor);
+      if (r - rc > 1e-6) add(new THREE.CylinderGeometry(r - rc, r - rc, 2 * rc, 32), mat, rc);
+      tipH = rc;
+    }
+    add(new THREE.CylinderGeometry(r, r, flute, 32), mat, tipH + flute / 2);
     add(new THREE.CylinderGeometry(r, r, 20, 32), shank, flute + 10);
   }
   toolGroup.userData.tool = t;

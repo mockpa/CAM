@@ -41,8 +41,19 @@ def pocket(shape: BaseGeometry, tool: Tool, depth: float, step_down: float,
     loops = offset_loops(shape, tool.radius, stepover, climb)
     allowed = offset(shape, -tool.radius + 1e-6)   # where the tool centre may go
     tp = Toolpath(name, tool)
-    z_prev = top_z
-    for z in step_depths(depth, step_down, top_z):
+    clear_levels(tp, loops, allowed, tool, step_depths(depth, step_down, top_z), top_z, top_z, safe_z,
+                 feed, plunge, climb, entry, ramp_angle, helix_diameter)
+    return tp
+
+
+def clear_levels(tp: Toolpath, loops, allowed: BaseGeometry, tool: Tool, levels, z_start: float, top_z: float,
+                 safe_z: float, feed: float, plunge: float, climb: bool, entry: str, ramp_angle: float,
+                 helix_diameter: float | None):
+    """Cut tool-centre `loops` (offset_loops order) at each Z in `levels`. `allowed`
+    is the tool-centre region; z_start the floor already cut there before the first
+    level, top_z the stock top (rapids stop above it)."""
+    z_prev = z_start
+    for z in levels:
         here = None                                   # (x, y) while the tool is down at z
         for ring in loops:
             lr = LinearRing(ring)
@@ -76,4 +87,3 @@ def pocket(shape: BaseGeometry, tool: Tool, depth: float, step_down: float,
             here = loop[0]
         tp.rapid(z=safe_z)
         z_prev = z
-    return tp

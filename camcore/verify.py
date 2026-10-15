@@ -25,6 +25,9 @@ contact and cutting are exact at any depth, also beside the tool at radii
 below the original surface. A ray the body only crosses keeps its full
 length, so the model never holds less material than the real part.
 - tool tip below the rotary centreline (Z < 0) on rotary stock  -> error
+- bull-nose tools on rotary stock (not modelled there)          -> error
+
+Box stock models flat, ball, bull-nose and V-bit profiles exactly at its cells.
 
 Rotary stock is a cylinder or a rectangular bar along X; the tool may stand at
 any Y (indexed 3+1 work), the rays are cut by its body exactly at any offset.
@@ -271,6 +274,10 @@ class Stock:
             return d / math.tan(math.radians(tool.get("v_angle", 90)) / 2)
         if tool.get("kind") == "ball":
             return r - np.sqrt(np.clip(r * r - d * d, 0, None))
+        if tool.get("kind") == "bull":
+            rc = tool.get("corner_radius", 0.0)
+            e = np.clip(d - (r - rc), 0, None)
+            return rc - np.sqrt(np.clip(rc * rc - e * e, 0, None))
         return np.zeros_like(d)
 
     def interference(self, x, y_or_a, z, tool: dict, y: float = 0.0) -> float:
@@ -382,6 +389,10 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
         motions.append(Motion(n, kind, tuple(pos.values()), tuple(new.values()), tool, spindle, secs))
         if stock is not None:
             tinfo = machine.tools.get(tool, {"diameter": 3})
+            if rotary and tinfo.get("kind") == "bull":
+                once("error", n, f"T{tool} is a bull nose: not modelled on rotary stock, cannot be checked",
+                     ("bullrotary", tool))
+                return
             retract = all(abs(new[k] - pos[k]) < 1e-9 for k in "xya") and new["z"] >= pos["z"]
             seg = math.dist([pos[k] for k in "xyz"], [new[k] for k in "xyz"])
             if rotary:

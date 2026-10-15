@@ -44,13 +44,27 @@ def build_shape(spec: dict, base_dir: Path):
     return g
 
 
+SURFACE_OPS = ("surface_rough", "surface_finish")     # 3-axis model ops (box stock, no A)
+
+
 def build_model(spec: dict, base_dir: Path):
-    """A mesh for continuous rotary ops: {"file": "x.stl", "along": "x", "flip": false, "rotate_x": 0,
-    "center_yz": false, "x_start": null, "translate": [0, 0, 0]} (stl.place)."""
+    """A mesh in machine coordinates: {"file": "x.stl", "along": "x", "flip": false, "rotate_x": 0,
+    "center_yz": false, "x_start": null, "translate": [0, 0, 0]} (stl.place), then for flat
+    jobs optionally "xy_start": [x, y] (lowest X and Y moved there) and "z_top": z (highest
+    point moved there, e.g. 0 for the stock top)."""
     from .stl import load_stl, place
-    return place(load_stl(base_dir / spec["file"]), spec.get("rotate_x", 0.0), spec.get("center_yz", False),
-                 spec.get("x_start"), spec.get("translate", (0.0, 0.0, 0.0)), spec.get("along", "x"),
-                 spec.get("flip", False))
+    m = place(load_stl(base_dir / spec["file"]), spec.get("rotate_x", 0.0), spec.get("center_yz", False),
+              spec.get("x_start"), spec.get("translate", (0.0, 0.0, 0.0)), spec.get("along", "x"),
+              spec.get("flip", False))
+    if "xy_start" in spec or "z_top" in spec:
+        off = [0.0, 0.0, 0.0]
+        if "xy_start" in spec:
+            off[0] = spec["xy_start"][0] - m.bounds[0][0]
+            off[1] = spec["xy_start"][1] - m.bounds[0][1]
+        if "z_top" in spec:
+            off[2] = spec["z_top"] - m.bounds[1][2]
+        m.apply_translation(off)
+    return m
 
 
 def continue_a(paths, native):
@@ -136,7 +150,9 @@ def run_job(job: dict, base_dir: Path = Path(".")):
         index_spec = spec_own.pop("index", None if "model" in spec_own else job.get("index"))
         face_z = spec_own.pop("face_z", None)
         if "model" in spec_own and index_spec is not None:
-            raise ValueError(f"operation {op_id!r}: rotary model ops turn A themselves and cannot be indexed")
+            raise ValueError(f"operation {op_id!r}: model ops (rotary or 3D) cannot be indexed")
+        if kind in SURFACE_OPS and job.get("rotary"):
+            raise ValueError(f"operation {op_id!r}: 3D ops cannot be wrapped onto a rotary job")
         if face_z is not None and index_spec is None:
             raise ValueError(f"operation {op_id!r}: face_z only applies to indexed operations")
         fn = getattr(ops, kind)
@@ -147,6 +163,11 @@ def run_job(job: dict, base_dir: Path = Path(".")):
         if kind == "drill":
             pts = spec.pop("points")
             tp = ops.drill(pts, tool, **spec)
+        elif kind in SURFACE_OPS:
+            model = models[spec.pop("model")]
+            if kind == "surface_rough" and "stock" not in spec:
+                spec["stock"] = job.get("stock")
+            tp = fn(model, tool, **spec)
         elif "model" in spec:
             model = models[spec.pop("model")]
             stock = job.get("stock") or {}

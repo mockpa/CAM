@@ -17,14 +17,17 @@ from .job import cutting_data, param_sources
 from .tools import Tool, library_from_dict
 from .wizard import STRATEGIES, portable
 
-OP_KINDS = ("pocket", "profile", "vcarve", "drill", "rotary_rough", "rotary_finish")
+OP_KINDS = ("pocket", "profile", "vcarve", "drill", "rotary_rough", "rotary_finish", "surface_rough",
+            "surface_finish")
 # What an op works on: a named shape, a named model, or a list of points.
-TARGET = {"drill": "points", "rotary_rough": "model", "rotary_finish": "model"}
+TARGET = {"drill": "points", "rotary_rough": "model", "rotary_finish": "model", "surface_rough": "model",
+          "surface_finish": "model"}
 # Keys of an operation that are not op function parameters (job.run_job handles them).
 STRUCT_KEYS = ("op", "id", "after", "tool", "shape", "model", "points", "index", "face_z", "clear_tool", "clear")
 # Suggestions for string parameters; the ops themselves validate.
-CHOICES = {"side": ("outside", "inside", "on"), "entry": ("ramp", "helix", "plunge"), "strategy": STRATEGIES}
-TOOL_KINDS = ("flat", "ball", "vbit")
+CHOICES = {"side": ("outside", "inside", "on"), "entry": ("ramp", "helix", "plunge"),
+           "strategy": STRATEGIES + ("raster", "waterline")}
+TOOL_KINDS = ("flat", "ball", "bull", "vbit")
 CUTTING_KEYS = ("rpm", "feed", "plunge", "step_down", "stepover_ratio", "ramp_angle")
 DEFAULT_LIBRARY = Path(__file__).resolve().parent.parent / "examples" / "tools.json"
 REQUIRED = inspect.Parameter.empty

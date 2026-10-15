@@ -9,11 +9,16 @@ from dataclasses import dataclass
 class Tool:
     name: str
     diameter: float
-    kind: str = "flat"          # flat | ball | vbit
+    kind: str = "flat"          # flat | ball | bull | vbit
     v_angle: float = 90.0       # included angle in degrees, vbit only
     flute_length: float = 20.0
     number: int | None = None   # tool table number on the controller
     center_cutting: bool = False  # may plunge straight down (only where an op allows it)
+    corner_radius: float = 0.0  # bull nose only: radius of the rounded corner, 0 < corner_radius <= radius
+
+    def __post_init__(self):
+        if self.kind == "bull" and not 0 < self.corner_radius <= self.radius:
+            raise ValueError(f"tool {self.name}: a bull nose needs 0 < corner_radius <= {self.radius}")
 
     @property
     def radius(self) -> float:
@@ -32,7 +37,23 @@ class Tool:
         if self.kind == "ball":
             d = min(depth, self.radius)
             return math.sqrt(max(0.0, self.radius**2 - (self.radius - d) ** 2))
+        if self.kind == "bull":
+            rc = self.corner_radius
+            d = min(depth, rc)
+            return self.radius - rc + math.sqrt(max(0.0, rc**2 - (rc - d) ** 2))
         return self.radius
+
+    def profile(self, d: float) -> float:
+        """Height of the cutting surface above the tip at distance d (<= radius) from the axis."""
+        r = self.radius
+        if self.kind == "vbit":
+            return d / math.tan(math.radians(self.v_angle) / 2.0)
+        if self.kind == "ball":
+            return r - math.sqrt(max(0.0, r * r - d * d))
+        if self.kind == "bull":
+            rc, flat = self.corner_radius, r - self.corner_radius
+            return 0.0 if d <= flat else rc - math.sqrt(max(0.0, rc * rc - (d - flat) ** 2))
+        return 0.0
 
     @staticmethod
     def from_dict(d: dict) -> "Tool":

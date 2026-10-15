@@ -304,8 +304,11 @@ class OpForm(QWidget):
                 v, src = eff[p.name]
                 hint, tip = format_value(v), SOURCE[src].format(material=material)
             elif p.required:
-                if p.name == "stock_diameter" and (self.project.job.get("stock") or {}).get("type") == "cylinder":
+                stock_type = (self.project.job.get("stock") or {}).get("type")
+                if p.name == "stock_diameter" and stock_type == "cylinder":
                     hint, tip = "from the cylinder stock", "the job's cylinder stock sets it"
+                elif p.name == "stock" and stock_type == "box":
+                    hint, tip = "from the box stock", "the job's box stock sets it"
                 else:
                     hint, tip = "required", "the operation needs a value"
                     if p.name not in eff:

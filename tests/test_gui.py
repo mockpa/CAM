@@ -100,6 +100,18 @@ def test_hints_follow_the_tool_and_material(qtbot, window, ex):
     assert "depth is required" in form.warning.text()
 
 
+def test_3d_ops_take_the_box_stock_from_the_job(qtbot, window, ex):
+    w = window(ex / "relief_job.json")
+    for row in range(3):
+        w.ops_panel.list.setCurrentRow(row)
+        form = w.ops_panel.form
+        assert form.warning.text() == "", row
+    w.ops_panel.list.setCurrentRow(0)
+    fields = {p.name: f for p, f in w.ops_panel.form.fields.items()}
+    assert fields["stock"].placeholderText() == "from the box stock"
+    assert fields["feed"].placeholderText() == "2500"                    # em6 hardwood
+
+
 def test_preview_is_a_dry_run_outside_the_output_folder(qtbot, window, ex):
     w = window(ex / "sign_job.json")
     ok, view, exported = run_check(qtbot, w, w.preview)

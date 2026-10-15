@@ -1,0 +1,15 @@
+{
+  "post": "linuxcnc",
+  "tool_library": "tools.json",
+  "material": "hardwood",
+  "stock": {"type": "box", "x": [0, 80], "y": [0, 60], "z": [-15, 0]},
+  "models": {"relief": {"file": "relief.stl"}},
+  "defaults": {"safe_z": 5.0},
+  "operations": [
+    {"id": "rough", "op": "surface_rough", "model": "relief", "tool": "em6", "stock_to_leave": 0.5},
+    {"id": "finish", "op": "surface_finish", "model": "relief", "tool": "ball3", "after": ["rough"],
+     "strategy": "raster", "stepover": 0.5, "floor": -11.5},
+    {"id": "walls", "op": "surface_finish", "model": "relief", "tool": "ball3", "after": ["finish"],
+     "strategy": "waterline", "step_down": 0.3, "z_range": [-7, -1.5], "boundary": [50, 30, 66, 46]}
+  ]
+}

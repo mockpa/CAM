@@ -2,11 +2,16 @@
 
 Tool numbers come from `Tool.number` when set, otherwise tools are numbered in
 order of first use. LinuxCNC applies the tool length offset with G43.
+
+Runs of feed moves are written as G2/G3 arcs where an arc fits them within
+`arc_tolerance` (see camcore/arcfit.py); arcs=False keeps everything as G1.
+Rotary (A-axis) toolpaths always stay linear, in G93 inverse time.
 """
 from __future__ import annotations
 
 import math
 
+from ..arcfit import fit_run
 from ..toolpath import Toolpath
 from .base import PostProcessor
 
@@ -17,10 +22,13 @@ class LinuxCncPost(PostProcessor):
     supports_a_axis = True
     path_tolerance = 0.01   # G64 P: blending tolerance in mm
 
-    def __init__(self, atc_prefetch: bool = True):
+    def __init__(self, atc_prefetch: bool = True, arcs: bool = True, arc_tolerance: float = 0.01):
         # With a carousel/rack ATC, issuing the next T word right after M6 lets
         # the changer stage the next tool while this one cuts.
         self.atc_prefetch = atc_prefetch
+        if arc_tolerance <= 0:
+            raise ValueError("arc_tolerance must be > 0")
+        self.arcs, self.arc_tolerance = arcs, arc_tolerance
         self._numbers: dict = {}
         self._last_tool = None
         self._upcoming: list = []
@@ -61,9 +69,90 @@ class LinuxCncPost(PostProcessor):
         return super().emit(paths)
 
     def moves(self, tp: Toolpath) -> list[str]:
-        if not tp.uses_a_axis():
+        if tp.uses_a_axis():
+            return ["G93 (inverse-time feed for rotary moves)"] + self._inverse_time_moves(tp) + ["G94"]
+        if not self.arcs:
             return super().moves(tp)
-        return ["G93 (inverse-time feed for rotary moves)"] + self._inverse_time_moves(tp) + ["G94"]
+        return self._arc_moves(tp)
+
+    def _arc_moves(self, tp: Toolpath) -> list[str]:
+        q = 10 ** -self.decimals
+        out, emitted, last_feed = [], {}, None
+        pos = {"x": None, "y": None, "z": None}
+
+        def words(target):
+            ws = []
+            for k in ("x", "y", "z"):
+                v = target.get(k)
+                if v is None:
+                    continue
+                v = round(v, self.decimals)
+                if emitted.get(k) is None or abs(emitted[k] - v) >= q:
+                    ws.append(f"{k.upper()}{self.fmt(v)}")
+                    emitted[k] = v
+            return ws
+
+        def feed_word(f):
+            nonlocal last_feed
+            if f is None or f == last_feed:
+                return ""
+            last_feed = f
+            return f" F{self.fmt(f)}"
+
+        moves, k = tp.moves, 0
+        while k < len(moves):
+            m = moves[k]
+            if m.kind == "rapid" or None in pos.values():
+                target = {a: getattr(m, a) for a in "xyz"}
+                ws = words(target)
+                pos.update({a: v for a, v in target.items() if v is not None})
+                if ws:
+                    out.append(("G0 " if m.kind == "rapid" else "G1 ") + " ".join(ws)
+                               + (feed_word(m.feed) if m.kind == "feed" else ""))
+                k += 1
+                continue
+            # a run of feed moves at one feed rate, starting from the current position
+            f = m.feed if m.feed is not None else last_feed
+            pts = [(pos["x"], pos["y"], pos["z"])]
+            while k < len(moves) and moves[k].kind == "feed" and moves[k].feed in (None, f):
+                mk = moves[k]
+                pos.update({a: getattr(mk, a) for a in "xyz" if getattr(mk, a) is not None})
+                pts.append((pos["x"], pos["y"], pos["z"]))
+                k += 1
+            for piece in fit_run(pts, self.arc_tolerance):
+                if piece[0] == "arc":
+                    _, i, j, centre, cw = piece
+                    line = self._arc_line(pts[i], pts[j], centre, cw, words)
+                    if line:
+                        out.append(line + feed_word(f))
+                        continue
+                    ends = range(i + 1, j + 1)          # rounding broke the arc: keep the lines
+                else:
+                    ends = [piece[1]]
+                for e in ends:
+                    ws = words(dict(zip("xyz", pts[e])))
+                    if ws:
+                        out.append("G1 " + " ".join(ws) + feed_word(f))
+        return out
+
+    def _arc_line(self, start, end, centre, cw, words):
+        """G2/G3 line with the centre moved onto the perpendicular bisector of the
+        *rounded* start and end, so both radii agree to well under a micron."""
+        sx, sy = (round(v, self.decimals) for v in start[:2])
+        ex, ey = (round(v, self.decimals) for v in end[:2])
+        mx, my = (sx + ex) / 2, (sy + ey) / 2
+        ux, uy = -(ey - sy), ex - sx
+        n = math.hypot(ux, uy)
+        if n < 1e-9:
+            return None
+        ux, uy = ux / n, uy / n
+        t = (centre[0] - mx) * ux + (centre[1] - my) * uy
+        cx, cy = mx + t * ux, my + t * uy
+        if math.hypot(cx - centre[0], cy - centre[1]) > self.arc_tolerance:
+            return None
+        i, j = round(cx - sx, self.decimals), round(cy - sy, self.decimals)
+        ws = words(dict(zip("xyz", end)))
+        return f"{'G2' if cw else 'G3'} {' '.join(ws)} I{self.fmt(i)} J{self.fmt(j)}"
 
     def _inverse_time_moves(self, tp: Toolpath) -> list[str]:
         """With Z0 on the rotary centreline, the surface speed of an A move is

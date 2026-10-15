@@ -17,7 +17,7 @@ from ..tools import Tool
 from ..toolpath import Toolpath
 
 CLEARANCE = 1.0          # mm above the stock top where rapids stop before an entry
-HELIX_SEG_DEG = 10.0     # chord angle when flattening the helix into lines
+HELIX_SEG_DEG = 5.0      # chord angle when flattening the helix into lines (fine enough to refit arcs)
 MAX_RAMP_ANGLE = 30.0    # steeper is a plunge in disguise (verify flags > 45 deg)
 HELIX_MIN_RATIO = 0.5    # smallest helix path diameter, as a fraction of the tool diameter
 

@@ -1,10 +1,28 @@
 """Shared geometry helpers for operations."""
 from __future__ import annotations
 
+import math
+
 from shapely.geometry import LinearRing, MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
 
 JOIN_ROUND = "round"
+CHORD_TOL = 0.005    # mm: max bulge of a straight segment against the true arc it stands for
+
+
+def quad_segs(radius: float) -> int:
+    """Segments per quarter circle so each chord is within CHORD_TOL of the arc
+    (fine enough for the post to fit G2/G3 arcs back within its 0.01 mm)."""
+    r = abs(radius)
+    if r <= CHORD_TOL:
+        return 4
+    step = 2 * math.acos(1 - CHORD_TOL / r)
+    return max(8, math.ceil((math.pi / 2) / step))
+
+
+def offset(geom: BaseGeometry, d: float) -> BaseGeometry:
+    """Round-joined offset (inwards for d < 0) with arcs as fine as quad_segs()."""
+    return geom.buffer(d, quad_segs=quad_segs(d), join_style=JOIN_ROUND)
 
 
 def polygons(geom: BaseGeometry) -> list[Polygon]:
@@ -23,22 +41,29 @@ def polygons(geom: BaseGeometry) -> list[Polygon]:
     return []
 
 
-def rings(poly: Polygon, climb: bool = True) -> list[list[tuple[float, float]]]:
+def rings(poly: Polygon, climb: bool = True, wall_outside: bool = False) -> list[list[tuple[float, float]]]:
     """Exterior + interior rings oriented for climb (or conventional) milling.
 
-    With a clockwise-spinning spindle, climb milling keeps material on the right:
-    outer boundaries are cut clockwise, holes counter-clockwise.
+    With a clockwise-spinning (M3) spindle, climb milling keeps the wall on the
+    right of the direction of travel and the waste on the left.
+
+    wall_outside=False: the material to keep is inside the exterior ring (outside
+    profiles): exterior clockwise, holes counter-clockwise.
+    wall_outside=True: the material to keep is outside the exterior ring and
+    inside the holes (pockets, inside profiles, V-carve): exterior
+    counter-clockwise, islands clockwise.
     """
+    cw_exterior = climb != wall_outside
     out = []
     ext = LinearRing(poly.exterior.coords)
     ext_coords = list(ext.coords)
-    if ext.is_ccw == climb:
+    if ext.is_ccw == cw_exterior:
         ext_coords.reverse()
     out.append(ext_coords)
     for hole in poly.interiors:
         r = LinearRing(hole.coords)
         c = list(r.coords)
-        if r.is_ccw != climb:
+        if r.is_ccw != cw_exterior:
             c.reverse()
         out.append(c)
     return out

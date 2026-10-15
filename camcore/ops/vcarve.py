@@ -13,7 +13,7 @@ from shapely.geometry.base import BaseGeometry
 
 from ..tools import Tool
 from ..toolpath import Toolpath
-from .common import JOIN_ROUND, polygons, rings
+from .common import offset, polygons, rings
 from .entry import approach, check_entry, ramp_ring
 
 
@@ -33,12 +33,12 @@ def vcarve(shape: BaseGeometry, tool: Tool, step: float = 0.1, max_depth: float 
         depth = tool.depth_for_radius(r)
         if depth > limit + 1e-9:
             break
-        inset = shape.buffer(-r, join_style=JOIN_ROUND)
+        inset = offset(shape, -r)
         if inset.is_empty:
             break
         level = Toolpath(name, tool)
         for p in polygons(inset):
-            for ring in rings(p, climb):
+            for ring in rings(p, climb, wall_outside=True):
                 if entry == "plunge":
                     level.cut_polyline(ring, top_z - depth, safe_z, feed, plunge)
                 else:
@@ -58,4 +58,4 @@ def vcarve(shape: BaseGeometry, tool: Tool, step: float = 0.1, max_depth: float 
 def vcarve_flat_bottom_area(shape: BaseGeometry, tool: Tool, flat_depth: float) -> BaseGeometry:
     """Region a flat endmill must clear when V-carving with a depth cap."""
     r = flat_depth * math.tan(math.radians(tool.v_angle) / 2)
-    return shape.buffer(-r, join_style=JOIN_ROUND)
+    return offset(shape, -r)

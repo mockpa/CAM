@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from .job import load_job, run_job
-from .post import get_post
+from .post import job_post
 
 
 def main(argv=None):
@@ -23,7 +23,7 @@ def main(argv=None):
 
     job, base = load_job(args.job)
     paths = run_job(job, base)
-    gcode = get_post(args.post or job.get("post", "linuxcnc")).emit(paths)
+    gcode = job_post(job, args.post).emit(paths)
 
     for tp in paths:
         f, r = tp.length()

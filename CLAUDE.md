@@ -28,9 +28,9 @@ Pipeline: JSON job → `job.run_job` → list of `Toolpath` (IR) → `post.get_p
 - `camcore/job.py`: builds named shapes (rect/circle/polygon/svg/union/difference), merges `defaults` into each operation, and dispatches by name with `getattr(ops, spec["op"])(shape, tool, **params)`. A new op must be exported from `ops/__init__.py`, and its keyword args are the job-file keys. Special cases live here: `drill` takes `points` instead of a shape; a `vcarve` with `clear_tool` adds a pocket pass first. `rotary` wrapping is applied to every path after all ops are built, and the optional `"tool_order": "minimize_changes"` regroup runs last.
 - `camcore/ops/*`: geometry + tool + params in, `Toolpath` IR out. Ops never write G-code.
 - `camcore/toolpath.py`: the IR (rapid/feed moves with X Y Z A; `None` means the axis is unchanged). Every mode emits it; posts, viewer and checks consume it.
-- `camcore/post/*`: IR to G-code per controller, registered in `post/__init__.py` `POSTS`. `linuxcnc.py` is the primary target (T/M6 + G43, next-tool staging, G93 for A moves, G64 P blending). `grbl.py` is secondary (M0 pause on tool change, refuses A moves).
+- `camcore/post/*`: IR to G-code per controller, registered in `post/__init__.py` `POSTS`; `job_post(job)` applies the job's `"post_options"`. The LinuxCNC post fits G2/G3 arcs to feed runs with `camcore/arcfit.py` (tolerance against the original segments, not just the vertices); ops still emit only lines. `linuxcnc.py` is the primary target (T/M6 + G43, next-tool staging, G93 for A moves, G64 P blending). `grbl.py` is secondary (M0 pause on tool change, refuses A moves).
 - `camcore/ops/rotary.py`: wrap = Y becomes A (deg = Y / r), Z0 is on the rotary centreline, so cutting Z = radius + depth.
-- `camcore/verify.py`: independent G-code replay with machine + stock model (heightmap for box stock, radius map over (X, A) for cylinder stock). It parses G-code text and must never import ops or posts, so it stays an independent check of their output. `verify_cli.py` is its CLI.
+- `camcore/verify.py`: independent G-code replay with machine + stock model (heightmap for box stock, radius map over (X, A) for cylinder stock). It parses G-code text (G0/G1, and G2/G3 replayed as chords through the same checks) and must never import ops or posts, so it stays an independent check of their output. `verify_cli.py` is its CLI.
 - `camcore/viewer.py` + `viewer_template.html`: self-contained HTML player (vendored three.js r128 in `camcore/vendor/`, shipped as package data).
 - `sim/`: Docker image with Debian trixie's `linuxcnc-uspace` (2.9.4, non-setuid `rtapi_app`), XYZA sim config in `sim/config/`, headless `run_check.py`. `entrypoint.sh` picks up `/work/tool.tbl`, `/work/machine.ini` and `/work/machine.var` (G54) if they are mounted.
 
@@ -38,6 +38,8 @@ Pipeline: JSON job → `job.run_job` → list of `Toolpath` (IR) → `post.get_p
 
 ## Conventions
 - Units: mm and degrees everywhere internally.
+- Climb = wall on the right of travel (M3 spindle): `rings(..., wall_outside=True)` for pockets, inside profiles and V-carve.
+- Offsets and circles go through `ops/common.offset()` / `quad_segs()` so chords stay within 0.005 mm of the true arc; coarser geometry won't be refit to arcs.
 - Machine conventions: rotary A turns around X; Z0 on the rotary centreline for rotary jobs; Z0 at the stock top for flat jobs.
 - Tools come from `examples/tools.json`-style libraries; `number` is the ATC pocket and the LinuxCNC tool number. `center_cutting` (default false) gates every straight plunge.
 - Ops never plunge into material unless `entry="plunge"` and the tool is centre-cutting: entries live in `camcore/ops/entry.py` (ramp along the contour, helix for pockets). Profiles are built in `camcore/ops/contour.py`: distance-along-contour parametrisation where depth = max(base ramp/level, tab profile), emitted exactly at kinks and crossings (no sampling). verify enforces the same rule independently.

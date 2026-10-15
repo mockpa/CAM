@@ -9,7 +9,8 @@ from shapely.geometry import Point, Polygon, box
 from shapely.ops import unary_union
 
 from . import ops
-from .post import get_post
+from .ops.common import quad_segs
+from .post import job_post
 from .svg import load_svg
 from .tools import Tool, load_library
 
@@ -21,7 +22,7 @@ def build_shape(spec: dict, base_dir: Path):
     if t == "rect":
         g = box(spec["x"], spec["y"], spec["x"] + spec["w"], spec["y"] + spec["h"])
     elif t == "circle":
-        g = Point(spec["cx"], spec["cy"]).buffer(spec["r"], quad_segs=max(16, int(spec["r"] * 2)))
+        g = Point(spec["cx"], spec["cy"]).buffer(spec["r"], quad_segs=quad_segs(spec["r"]))
     elif t == "polygon":
         g = Polygon(spec["points"], spec.get("holes", []))
     elif t == "svg":
@@ -106,4 +107,4 @@ def load_job(path: str | Path) -> tuple[dict, Path]:
 def job_to_gcode(path: str | Path) -> str:
     job, base = load_job(path)
     paths = run_job(job, base)
-    return get_post(job.get("post", "linuxcnc")).emit(paths)
+    return job_post(job).emit(paths)

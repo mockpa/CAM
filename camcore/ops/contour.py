@@ -14,7 +14,10 @@ from __future__ import annotations
 import bisect
 import math
 
+from shapely.geometry import LinearRing
+
 from ..toolpath import Toolpath
+from .common import quad_segs
 from .entry import MAX_RAMP_ANGLE
 
 EPS = 1e-9
@@ -101,12 +104,64 @@ class Tabs:
         return out
 
 
+class Lead:
+    """Lead-in/lead-out circle in the waste, tangent to the contour at its start.
+
+    Climb milling keeps the wall on the right, so the waste is on the left and the
+    lead circle runs counter-clockwise (clockwise for conventional milling).
+    Lead-in is the quarter arc onto the contour start, lead-out the quarter arc
+    off it; between levels the tool descends on the rest of the circle.
+    """
+
+    def __init__(self, ring, radius: float, climb: bool):
+        (px, py), (qx, qy) = ring[0], ring[1]
+        L = math.hypot(qx - px, qy - py)
+        tx, ty = (qx - px) / L, (qy - py) / L
+        self.sign = 1 if climb else -1                       # +1: counter-clockwise
+        wx, wy = -ty * self.sign, tx * self.sign             # unit normal towards the waste
+        self.r = radius
+        self.c = (px + radius * wx, py + radius * wy)
+        phi_p = math.atan2(-wy, -wx)
+        self.phi_s = phi_p - self.sign * math.pi / 2         # where the lead-in starts
+        self.phi_e = phi_p + self.sign * math.pi / 2         # where the lead-out ends
+        self.phi_p = phi_p
+
+    def at(self, phi):
+        return self.c[0] + self.r * math.cos(phi), self.c[1] + self.r * math.sin(phi)
+
+    def circle(self) -> LinearRing:
+        n = 4 * quad_segs(self.r)
+        return LinearRing([self.at(2 * math.pi * k / n) for k in range(n)])
+
+    def arc(self, tp: Toolpath, phi0: float, sweep: float, z0: float, z1: float, feed: float):
+        """Move along the circle from phi0 by `sweep` (>= 0, in the lead direction), z0 -> z1."""
+        n = max(1, math.ceil(sweep / (math.pi / 2 / quad_segs(self.r))))
+        for k in range(1, n + 1):
+            x, y = self.at(phi0 + self.sign * sweep * k / n)
+            tp.feed(x=x, y=y, z=z0 + (z1 - z0) * k / n, f=feed)
+
+
+def plan_lead(ring, radius: float, climb: bool, keep_clear, tool_radius: float) -> Lead | None:
+    """A lead circle of at most `radius` whose path keeps the tool off the part, or None.
+
+    keep_clear(ring) tells whether a tool-centre path stays in the waste."""
+    r = radius
+    while r >= tool_radius / 2:
+        lead = Lead(ring, r, climb)
+        if keep_clear(lead.circle()):
+            return lead
+        r /= 2
+    return None
+
+
 def cut_contour(tp: Toolpath, ring, levels, top_z: float, entry: str, ramp_angle: float,
-                feed: float, plunge: float, tabs: Tabs | None = None):
+                feed: float, plunge: float, tabs: Tabs | None = None, lead: Lead | None = None):
     """Cut a closed contour through all `levels` (descending z) without retracting.
 
-    The tool must already be at ring[0] at top_z. Ramp entry descends along the
-    contour; plunge entry drops straight down at the current point.
+    Without a lead the tool must already be at ring[0] at top_z: ramp entry
+    descends along the contour, plunge entry drops straight down. With a lead it
+    must be at the lead-in start at top_z: each level descends on the lead circle,
+    arcs onto the contour, cuts the full loop and arcs off again.
     """
     if entry != "plunge" and not 0 < ramp_angle <= MAX_RAMP_ANGLE:
         raise ValueError(f"ramp_angle must be in (0, {MAX_RAMP_ANGLE:g}] degrees")
@@ -127,6 +182,24 @@ def cut_contour(tp: Toolpath, ring, levels, top_z: float, entry: str, ramp_angle
         for u in pts[1:]:
             x, y = rp.xy(u)
             tp.feed(x=x, y=y, z=max(base(u), tab(u)), f=feed)
+
+    if lead is not None:
+        phi = lead.phi_s
+        for z in levels:
+            back = (lead.phi_s - phi) * lead.sign % (2 * math.pi)     # rest of the circle to the lead-in start
+            if entry == "plunge":
+                lead.arc(tp, phi, back, zc, zc, feed)
+                tp.feed(z=z, f=plunge)
+            else:
+                need = (zc - z) / math.tan(math.radians(ramp_angle)) / lead.r      # radians of descent
+                turns = max(0, math.ceil((need - back) / (2 * math.pi) - 1e-9))
+                lead.arc(tp, phi, back + 2 * math.pi * turns, zc, z, feed)
+            lead.arc(tp, lead.phi_s, math.pi / 2, z, z, feed)                    # lead-in
+            piece(s, s + rp.length, z, z)                                        # full loop with tabs
+            s += rp.length
+            lead.arc(tp, lead.phi_p, math.pi / 2, z, z, feed)                    # lead-out
+            phi, zc = lead.phi_e, z
+        return
 
     for z in levels:
         if entry == "plunge":

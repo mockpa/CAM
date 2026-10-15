@@ -1,4 +1,7 @@
+import math
 from pathlib import Path
+
+import pytest
 
 from camcore.verify import Machine, machine_from_library, run
 
@@ -122,3 +125,48 @@ def test_ops_never_plunge_with_a_non_center_cutting_tool():
     for tp in paths:
         issues, _, _ = run(get_post("linuxcnc").emit([tp]), m, {"type": "box", "x": [-10, 50], "y": [-10, 35], "z": [-20, 0]})
         assert [str(i) for i in issues] == [], tp.name
+
+
+def test_arcs_are_replayed_and_checked():
+    # quarter circle r=10 around (20, 20), clockwise from (10, 20) to (20, 30), cutting 1 mm deep
+    body = "G0 X10 Y20\nG1 Z-1 F300\nG2 X20 Y30 I10 J0 F600\nG0 Z5\n"
+    errors, warnings = check(body)
+    assert errors == [] and warnings == []
+    m = Machine(tools=dict(TOOLS))
+    _, motions, sim = run(HEAD + body + "M5\nM2\n", m, BOX)
+    arc = [mo for mo in motions if mo.line == 8]
+    assert len(arc) > 5                                       # replayed as chords
+    for mo in arc:
+        assert math.hypot(mo.end[0] - 20, mo.end[1] - 20) == pytest.approx(10, abs=1e-9)
+    assert sum(mo.seconds for mo in arc) == pytest.approx(10 * math.pi / 2 / 600 * 60, rel=1e-3)
+    # material is gone on the arc (45 deg point) and untouched at the circle centre
+    def h(x, y):
+        return sim.h[int(round(x / 0.5)), int(round(y / 0.5))]
+    assert h(20 - 10 / math.sqrt(2), 20 + 10 / math.sqrt(2)) == pytest.approx(-1.0)
+    assert h(20, 20) == 0.0
+    # counter-clockwise the long way round: G3 from the same start reaches (20, 30) after 270 deg
+    _, motions, _ = run(HEAD + "G0 X10 Y20\nG1 Z-1 F300\nG3 X20 Y30 I10 J0\nG0 Z5\nM5\nM2\n", m, BOX)
+    assert min(mo.end[1] for mo in motions if mo.line == 8) == pytest.approx(10, abs=0.05)
+
+
+def test_helical_arc_and_full_circle():
+    m = Machine(tools=dict(TOOLS))
+    body = "G0 X30 Y25\nG1 Z0 F300\nG3 X30 Y25 Z-2 I-5 J0 F600\nG0 Z5\n"     # one full turn, 2 mm down
+    issues, motions, _ = run(HEAD + body + "M5\nM2\n", m, BOX)
+    assert [str(i) for i in issues] == []
+    arc = [mo for mo in motions if mo.line == 8]
+    assert arc[-1].end[2] == -2 and len(arc) >= 36
+    zs = [mo.end[2] for mo in arc]
+    assert zs == sorted(zs, reverse=True)
+
+
+def test_bad_arcs_are_errors():
+    errors, _ = check("G0 X10 Y20\nG1 Z1\nG2 X20 Y30.01 I10 J0 F600\n")
+    assert errors == ["arc end radius 10.0100 differs from start radius 10.0000"]
+    errors, _ = check("G0 X10 Y20\nG1 Z1\nG2 X20 Y30 R10 F600\n")
+    assert errors == ["R-format arcs are not supported (use I J)"]
+    errors, _ = check("G18\nG0 X10 Y20\n")
+    assert errors == ["G18: only XY-plane (G17) arcs are supported"]
+    # a rapid arc is not a thing, but a cutting arc into fresh material with the spindle off is
+    errors, _ = check("M5\nG0 X10 Y20\nG1 Z-1 F300\n")
+    assert errors and "spindle stopped" in errors[0]

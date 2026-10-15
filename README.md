@@ -5,6 +5,12 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
 ## What works today
 - **Profile**: inside / outside / on-line, multiple step-downs, climb or conventional. Each contour is cut
   through all depths without retracting.
+- **Lead-in/lead-out arcs** (profiles, `"lead_radius": 3`): a circle in the waste, tangent to the contour start.
+  Each depth level descends on it (no steeper than `ramp_angle`), arcs onto the contour, cuts the full loop and
+  arcs off. Where the circle would touch the part it shrinks; if it still does not fit, that contour gets none.
+  Not for `"side": "on"`.
+- **Climb / conventional**: climb (the default) keeps the wall on the right of the tool with an M3 spindle:
+  outside profiles run clockwise, pockets, inside profiles and V-carve counter-clockwise along the outer wall.
 - **Holding tabs** (profiles): `"tabs": {"count": 4, "width": 6, "height": 1.5}` (or `"spacing"` in mm instead of
   `"count"`, optional `"ramp_angle"`, default 30 deg). `width` is the tab at the part edge, `height` the material
   left above the bottom of the cut. Only passes below the tab top are affected: the tool rises over each tab and
@@ -22,8 +28,14 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
 - **Tool library / ATC**: `"tool_library": "tools.json"` with tool numbers; LinuxCNC post emits `Tn M6`, `G43 Hn` and stages the next tool; `"tool_order": "minimize_changes"` groups ops by tool.
 - **Import**: SVG (path with M/L/H/V/C/Q/Z, polygon, polyline, rect, circle; even-odd holes), plus rect/circle/polygon/union/difference shapes in the job file.
 - **Post**: LinuxCNC (default: T/M6 + G43 tool changes, A rotary axis, G64 blending) and GRBL 1.1 (pauses with `M0` on tool change, no A axis).
+- **Arc output** (LinuxCNC): runs of feed moves become G2/G3 arcs (helical where Z changes) when an arc stays
+  within 0.01 mm of every original segment, at most 180 deg per arc. The sign example shrinks from about 16000 to
+  1800 lines. Options per job: `"post_options": {"arcs": false}` for G1 only, `"arc_tolerance": 0.005`. Rotary
+  (A-axis) toolpaths stay linear in G93. Geometry offsets and circles are generated fine enough (chords within
+  0.005 mm) that arcs fit.
 - **Preview**: top-down SVG of the cuts, shaded by depth.
-- **Virtual dry run** (`camcore-verify`): replays the G-code on a model of your machine and stock and reports crashes (rapids into material, cutting with the spindle stopped), travel-limit violations, unknown tool numbers, missing `G43`, cuts deeper than the flute length and G93 moves without F. Also estimates machine time.
+- **Virtual dry run** (`camcore-verify`): replays the G-code on a model of your machine and stock and reports crashes (rapids into material, cutting with the spindle stopped), travel-limit violations, unknown tool numbers, missing `G43`, cuts deeper than the flute length and G93 moves without F. G2/G3 arcs (XY plane, helical) are
+  replayed through the same checks; arcs whose end radius differs from the start radius are errors. Also estimates machine time.
 - **Animated 3D viewer** (`--view`): one HTML file that plays the program with live material removal, A-axis rotation, tool changes and the check results. Works offline.
 - **LinuxCNC simulator container** (`sim/`): runs the program through real LinuxCNC (2.9.4) on a simulated XYZA machine with tool changer; verified, see `sim/README.md`. `camcore check` runs it for you.
 
@@ -74,4 +86,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-Arcs (G2/G3) and arc fitting, lead-in/out, SVG transforms, DXF import, medial-axis V-carve, rotary from STL, indexed 3+1, 3-axis 3D, GUI.
+SVG transforms, DXF import, medial-axis V-carve, rotary from STL, indexed 3+1, 3-axis 3D, GUI.

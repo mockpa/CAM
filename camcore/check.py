@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 
 from .job import load_job, run_job
-from .post import get_post
+from .post import job_post
 from .tooltable import to_tbl
 from .verify import Machine, machine_from_library, run
 
@@ -95,7 +95,7 @@ def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: s
 
     gcode = motions = stock_sim = issues = None
     try:
-        gcode = get_post(job.get("post", "linuxcnc")).emit(run_job(job, base))
+        gcode = job_post(job).emit(run_job(job, base))
     except Exception as e:                    # noqa: BLE001 - any failure here must end in a report
         fail(f"G-code generation: {type(e).__name__}: {e}")
 

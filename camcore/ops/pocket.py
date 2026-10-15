@@ -6,7 +6,7 @@ from shapely.geometry.base import BaseGeometry
 
 from ..tools import Tool
 from ..toolpath import Toolpath
-from .common import JOIN_ROUND, polygons, rings, step_depths
+from .common import offset, polygons, rings, step_depths
 from .entry import approach, check_entry, helix_down, plan_helix, ramp_ring, rotate_ring
 
 
@@ -17,11 +17,11 @@ def offset_loops(shape: BaseGeometry, first: float, stepover: float, climb: bool
     and the final pass is the finishing wall pass.
     """
     loops = []
-    current = shape.buffer(-first, join_style=JOIN_ROUND)
+    current = offset(shape, -first)
     while not current.is_empty:
         for p in polygons(current):
-            loops.extend(rings(p, climb))
-        current = current.buffer(-stepover, join_style=JOIN_ROUND)
+            loops.extend(rings(p, climb, wall_outside=True))
+        current = offset(current, -stepover)
     loops.reverse()
     return loops
 
@@ -39,7 +39,7 @@ def pocket(shape: BaseGeometry, tool: Tool, depth: float, step_down: float,
     check_entry(entry, tool, ("helix", "ramp", "plunge"))
     stepover = tool.diameter * stepover_ratio
     loops = offset_loops(shape, tool.radius, stepover, climb)
-    allowed = shape.buffer(-tool.radius + 1e-6, join_style=JOIN_ROUND)   # where the tool centre may go
+    allowed = offset(shape, -tool.radius + 1e-6)   # where the tool centre may go
     tp = Toolpath(name, tool)
     z_prev = top_z
     for z in step_depths(depth, step_down, top_z):

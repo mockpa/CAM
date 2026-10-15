@@ -311,3 +311,67 @@ def test_tab_settings_are_checked():
 def test_cutout_example_is_pinned():
     ex = Path(__file__).parent.parent / "examples"
     assert job_to_gcode(ex / "cutout_job.json") == (ex / "cutout.ngc").read_text()
+
+
+def test_climb_keeps_the_wall_on_the_right():
+    # M3 spindle: climb = wall on the right of travel. Outside profile: clockwise around the part.
+    # Pocket / inside profile: counter-clockwise along the outer wall, clockwise around islands.
+    from shapely.geometry import LinearRing as LR
+    from camcore.ops.common import rings
+    part = box(0, 0, 40, 30).difference(box(15, 10, 25, 20))
+    out_ext, out_hole = rings(part, climb=True)
+    in_ext, in_island = rings(part, climb=True, wall_outside=True)
+    assert not LR(out_ext).is_ccw and LR(out_hole).is_ccw
+    assert LR(in_ext).is_ccw and not LR(in_island).is_ccw
+    conv_ext, _ = rings(part, climb=False, wall_outside=True)
+    assert not LR(conv_ext).is_ccw
+    # the pocket's final (outermost, wall-finishing) loop runs counter-clockwise
+    from camcore.ops.pocket import offset_loops
+    assert LR(offset_loops(box(0, 0, 40, 30), EM.radius, 2.4)[-1]).is_ccw
+
+
+def test_lead_arcs_enter_tangentially_from_the_waste():
+    from camcore.verify import Machine, run
+    part = box(0, 0, 40, 30)
+    tool = Tool("em3", 3.0, number=1)                                 # not centre-cutting
+    tp = ops.profile(part, tool, depth=3, step_down=1.5, side="outside", lead_radius=4, ramp_angle=5)
+    pts = feed_xy(tp)
+    from camcore.ops.common import offset, polygons, rings
+    ring = rings(polygons(offset(part, tool.radius))[0])[0]
+    # the lead-in ends exactly at the contour start, on a radius-4 circle tangent to the contour there:
+    # its centre is 4 mm from the start, square to the contour, on the waste (left, for climb) side
+    i = next(k for k, p in enumerate(pts) if math.dist(p[:2], ring[0]) < 1e-9)
+    tx, ty = ring[1][0] - ring[0][0], ring[1][1] - ring[0][1]
+    n = math.hypot(tx, ty)
+    cx, cy = ring[0][0] - 4 * ty / n, ring[0][1] + 4 * tx / n
+    assert part.exterior.distance(Point(cx, cy)) > part.exterior.distance(Point(ring[0]))     # waste side
+    for x, y, _ in pts[i - 5:i + 1]:
+        assert math.hypot(x - cx, y - cy) == pytest.approx(4, abs=1e-9)
+    # the tool centre never comes closer than a tool radius to the part
+    assert min(part.exterior.distance(Point(x, y)) for x, y, _ in pts) >= tool.radius - 1e-6
+    # no descent is steeper than the ramp angle
+    for (x0, y0, z0), (x1, y1, z1) in zip(pts, pts[1:]):
+        if z1 < z0 and math.hypot(x1 - x0, y1 - y0) > 1e-9:
+            assert (z0 - z1) / math.hypot(x1 - x0, y1 - y0) <= math.tan(math.radians(5)) + 1e-6
+    # replayed: no errors, the part is untouched, the leads become G3 arcs of radius 4 (climb: CCW)
+    g = get_post("linuxcnc").emit([tp])
+    m = Machine(tools={1: {"diameter": 3, "kind": "flat", "flute_length": 20}},
+                work_offset={"x": 50, "y": 50, "z": -100})
+    issues, _, sim = run(g, m, {"type": "box", "x": [-15, 55], "y": [-15, 45], "z": [-5, 0]}, res=0.25)
+    assert [str(i) for i in issues] == []
+    inner = sim.h[int((15 + 0.5) / 0.25):int((15 + 39.5) / 0.25), int((15 + 0.5) / 0.25):int((15 + 29.5) / 0.25)]
+    assert (inner == 0).all()
+    radii = {round(math.hypot(float(l.split(" I")[1].split()[0]), float(l.split(" J")[1].split()[0])), 3)
+             for l in g.splitlines() if l.startswith("G3 ")}
+    assert 4.0 in radii
+
+
+def test_lead_falls_back_where_it_does_not_fit_and_needs_a_side():
+    hole = box(0, 0, 8, 8)                                   # inside profile: 5 mm of room for the tool centre
+    tool = Tool("em3", 3.0, number=1)
+    tp = ops.profile(hole, tool, depth=1, step_down=1, side="inside", lead_radius=20)
+    pts = feed_xy(tp)
+    inset = hole.buffer(-tool.radius + 1e-6)
+    assert all(inset.buffer(1e-6).contains(Point(x, y)) for x, y, _ in pts)   # shrunk lead stays inside
+    with pytest.raises(ValueError, match="lead_radius"):
+        ops.profile(hole, tool, depth=1, step_down=1, side="on", lead_radius=2)

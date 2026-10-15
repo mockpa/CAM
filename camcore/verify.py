@@ -11,6 +11,9 @@ Checks
 - tool numbers missing from the machine's tool table / ATC  -> error
 - cutting without a tool or without G43 length offset       -> error / warning
 - A-axis moves on a machine without one, G93 moves without F -> error
+- G2/G3 arcs (XY plane, I J centre, helical Z allowed) are replayed in short
+  chords through all of the above; an end radius that differs from the start
+  radius, R-format arcs and G18/G19 planes are errors
 
 Stock removal is simulated on a heightmap (box stock) or a radius map over
 (X, A) (cylinder stock), so rapids over already-cut areas are not flagged.
@@ -28,6 +31,7 @@ from pathlib import Path
 
 import numpy as np
 
+ARC_RADIUS_TOLERANCE = 0.002   # mm; LinuxCNC rejects arcs whose end radius differs more
 _WORD = re.compile(r"([A-Z])\s*([-+]?\d*\.?\d+)")
 
 
@@ -172,49 +176,8 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
             warned.add(key)
             issues.append(Issue(level, n, msg))
 
-    for n, w, raw in parse(text):
-        gs = [int(g) if g == int(g) else g for g in w.get("G", [])]
-        ms = [int(m) for m in w.get("M", [])]
-        if 93 in gs:
-            inverse_time = True
-        if 94 in gs:
-            inverse_time = False
-        if 53 in gs:     # machine-coordinate move: only used for retracts to the tool change height
-            motion_mode = 0 if 0 in gs else motion_mode
-            if "Z" in w:
-                pos["z"] = w["Z"][0] - machine.work_offset["z"]
-            continue
-        if "T" in w:
-            prepped = int(w["T"][0])
-            if machine.tools and prepped not in machine.tools:
-                issues.append(Issue("error", n, f"T{prepped} is not in the machine's tool table"))
-        if 6 in ms:
-            tool, offset_on = prepped or 0, False
-        if 43 in gs:
-            h = int(w.get("H", [tool])[0])
-            if h != tool:
-                issues.append(Issue("warning", n, f"G43 H{h} does not match loaded tool T{tool}"))
-            offset_on = True
-        if 49 in gs:
-            offset_on = False
-        if 3 in ms or 4 in ms:
-            spindle = True
-        if 5 in ms or 2 in ms or 30 in ms:
-            spindle = False
-        for g in gs:
-            if g in (0, 1):
-                motion_mode = g
-        if "F" in w:
-            feed = w["F"][0]
-        axes = {k.lower(): w[k][0] for k in "XYZA" if k in w}
-        if not axes or motion_mode is None:
-            continue
-        if "a" in axes and not machine.has_a:
-            once("error", n, "A-axis move but the machine has no rotary axis", "noa")
-        if motion_mode == 1 and inverse_time and "F" not in w:
-            issues.append(Issue("error", n, "G93 inverse-time move without F word"))
-        new = {**pos, **axes}
-        kind = "rapid" if motion_mode == 0 else "feed"
+    def move(n, kind, pos, new, total, scale=1.0):
+        """One straight move (a G0/G1, or one chord of an arc): travel, time, stock checks."""
         for k in ("x", "y", "z"):
             lo, hi = machine.travel[k]
             mval = new[k] + machine.work_offset[k]
@@ -228,10 +191,10 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
             dist = math.hypot(dist, math.radians(new["a"] - pos["a"]) * r)
         if kind == "rapid":
             secs = dist / machine.rapid_rate * 60
-        elif inverse_time:
-            secs = 60.0 / feed if feed else 0.0
-        else:
-            secs = dist / feed * 60 if feed else 0.0
+        elif inverse_time:                       # F = moves per minute for the whole G-code move
+            secs = 60.0 / feed * (dist / total if total else 1.0) if feed else 0.0
+        else:                                    # scale: true arc length / chord length
+            secs = dist * scale / feed * 60 if feed else 0.0
         motions.append(Motion(n, kind, tuple(pos.values()), tuple(new.values()), tool, spindle, secs))
         if stock is not None:
             tinfo = machine.tools.get(tool, {"diameter": 3})
@@ -271,8 +234,109 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
                         once("warning", n, f"T{tool} cuts {surface - p['z']:.2f} mm deep, "
                              f"more than its {fl} mm flute length", ("flute", tool))
                     stock.cut(p["x"], u, p["z"], tinfo)
+
+    for n, w, raw in parse(text):
+        gs = [int(g) if g == int(g) else g for g in w.get("G", [])]
+        ms = [int(m) for m in w.get("M", [])]
+        if 93 in gs:
+            inverse_time = True
+        if 94 in gs:
+            inverse_time = False
+        if 53 in gs:     # machine-coordinate move: only used for retracts to the tool change height
+            motion_mode = 0 if 0 in gs else motion_mode
+            if "Z" in w:
+                pos["z"] = w["Z"][0] - machine.work_offset["z"]
+            continue
+        if "T" in w:
+            prepped = int(w["T"][0])
+            if machine.tools and prepped not in machine.tools:
+                issues.append(Issue("error", n, f"T{prepped} is not in the machine's tool table"))
+        if 6 in ms:
+            tool, offset_on = prepped or 0, False
+        if 43 in gs:
+            h = int(w.get("H", [tool])[0])
+            if h != tool:
+                issues.append(Issue("warning", n, f"G43 H{h} does not match loaded tool T{tool}"))
+            offset_on = True
+        if 49 in gs:
+            offset_on = False
+        if 3 in ms or 4 in ms:
+            spindle = True
+        if 5 in ms or 2 in ms or 30 in ms:
+            spindle = False
+        for g in gs:
+            if g in (0, 1, 2, 3):
+                motion_mode = g
+            if g in (18, 19):
+                once("error", n, f"G{g}: only XY-plane (G17) arcs are supported", "plane")
+        if "F" in w:
+            feed = w["F"][0]
+        axes = {k.lower(): w[k][0] for k in "XYZA" if k in w}
+        if not axes or motion_mode is None:
+            continue
+        if "a" in axes and not machine.has_a:
+            once("error", n, "A-axis move but the machine has no rotary axis", "noa")
+        if motion_mode != 0 and inverse_time and "F" not in w:
+            issues.append(Issue("error", n, "G93 inverse-time move without F word"))
+        new = {**pos, **axes}
+        if motion_mode in (2, 3):
+            arc = arc_points(n, w, pos, new, motion_mode == 2, res, issues)
+            if arc is None:
+                pos = new
+                continue
+            pts, arc_len = arc
+        else:
+            pts = [new]
+        kind = "rapid" if motion_mode == 0 else "feed"
+        # an arc is replayed as chords; with G93 its one F covers all of them
+        total = (sum(math.dist([a[k] for k in "xyz"], [b[k] for k in "xyz"]) for a, b in zip([pos] + pts, pts))
+                 if motion_mode in (2, 3) else None)
+        scale = arc_len / total if total else 1.0
+        for p_end in pts:
+            move(n, kind, pos, p_end, total, scale)
+            pos = p_end
         pos = new
+
     return issues, motions, stock
+
+
+def arc_points(n, w, start, end, cw, res, issues):
+    """(points along a G2 (cw) / G3 arc in the XY plane, helical in Z, true path length), or None."""
+    if "R" in w:
+        issues.append(Issue("error", n, "R-format arcs are not supported (use I J)"))
+        return None
+    if "A" in w:
+        issues.append(Issue("error", n, "arc with an A-axis move is not supported"))
+        return None
+    if "I" not in w and "J" not in w:
+        issues.append(Issue("error", n, "arc without I/J centre"))
+        return None
+    cx, cy = start["x"] + w.get("I", [0.0])[0], start["y"] + w.get("J", [0.0])[0]
+    r0 = math.hypot(start["x"] - cx, start["y"] - cy)
+    r1 = math.hypot(end["x"] - cx, end["y"] - cy)
+    if r0 < 1e-9:
+        issues.append(Issue("error", n, "arc with zero radius"))
+        return None
+    if abs(r1 - r0) > ARC_RADIUS_TOLERANCE:
+        issues.append(Issue("error", n, f"arc end radius {r1:.4f} differs from start radius {r0:.4f}"))
+        return None
+    a0 = math.atan2(start["y"] - cy, start["x"] - cx)
+    a1 = math.atan2(end["y"] - cy, end["x"] - cx)
+    sweep = (a0 - a1) % (2 * math.pi) if cw else (a1 - a0) % (2 * math.pi)
+    if sweep < 1e-12:
+        sweep = 2 * math.pi                  # same start and end: a full circle
+    # chords no more than res/4 off the true arc
+    seg = 2 * math.acos(max(-1.0, 1 - (res / 4) / r0)) if r0 > res / 4 else math.pi / 2
+    steps = max(1, math.ceil(sweep / min(seg, math.radians(10))))
+    sign = -1 if cw else 1
+    out = []
+    for k in range(1, steps + 1):
+        a = a0 + sign * sweep * k / steps
+        r = r0 + (r1 - r0) * k / steps
+        out.append({**end, "x": cx + r * math.cos(a), "y": cy + r * math.sin(a),
+                    "z": start["z"] + (end["z"] - start["z"]) * k / steps})
+    out[-1] = dict(end)
+    return out, math.hypot(sweep * (r0 + r1) / 2, end["z"] - start["z"])
 
 
 def machine_from_library(machine: Machine, library) -> Machine:

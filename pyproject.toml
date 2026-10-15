@@ -1,0 +1,23 @@
+[project]
+name = "camcore"
+version = "0.1.0"
+description = "CAM core: 2.5D, V-carve (and later 3D / 4-axis) toolpaths with G-code post-processing"
+requires-python = ">=3.10"
+dependencies = ["shapely>=2.0", "numpy>=1.24"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+camcore = "camcore.cli:main"
+camcore-verify = "camcore.verify_cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-data]
+camcore = ["viewer_template.html", "vendor/*"]
+
+[tool.setuptools.packages.find]
+include = ["camcore*"]

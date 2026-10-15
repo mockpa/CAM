@@ -1,0 +1,7 @@
+{
+  "_comment": "Placeholder values: replace travel, work offset and stock with your machine's. Work offset = machine coordinates of the G54 zero.",
+  "travel": {"x": [0, 600], "y": [0, 400], "z": [-120, 0]},
+  "work_offset": {"x": 20, "y": 20, "z": -90},
+  "has_a": true,
+  "stock": {"type": "box", "x": [0, 160], "y": [0, 90], "z": [-18, 0]}
+}

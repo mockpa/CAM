@@ -1,0 +1,13 @@
+{
+  "post": "linuxcnc",
+  "tool_library": "tools.json",
+  "rotary": {"diameter": 40},
+  "defaults": {"safe_z": 5.0},
+  "shapes": {
+    "art": {"type": "svg", "file": "sign.svg", "fit_origin": [10, 20], "scale": 1.0}
+  },
+  "operations": [
+    {"op": "vcarve", "shape": "art", "tool": "v90", "step": 0.2, "feed": 900, "max_depth": 2.5,
+     "clear_tool": "em3", "clear": {"stepover_ratio": 0.45, "feed": 1000}}
+  ]
+}

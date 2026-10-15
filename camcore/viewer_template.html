@@ -1,0 +1,436 @@
+<title>__TITLE__</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+/* Layout: machine-control console. 3D work area fills the left, a DRO-style readout column on the right,
+   transport bar along the bottom like a jog pendant. Stacks to one column on phones. */
+:root {
+  --bg: #eef1f3;          /* machine enamel, cool grey */
+  --panel: #ffffff;
+  --ink: #1b2329;
+  --muted: #5d6b75;
+  --line: #d3dade;
+  --accent: #c76b00;      /* safety amber: the tool and the play control */
+  --scene: #e3e8eb;
+  --stock: #c9a679;       /* uncut stock top */
+  --stock-cut: #6e4f2c;   /* deepest cut */
+  --feed: #1f6fb2;
+  --rapid: #d0342c;
+  --ok: #2a7d46;
+  --warn: #a86a00;
+  --err: #c0322b;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15191c; --panel: #1d2327; --ink: #e4e9ec; --muted: #93a1aa; --line: #2e373d;
+  --accent: #f0962e; --scene: #11151a; --stock: #b8936a; --stock-cut: #5a3f22;
+  --feed: #5aa7e6; --rapid: #ff6a5f; --ok: #5cc184; --warn: #e6a640; --err: #ff6a5f; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15191c; --panel: #1d2327; --ink: #e4e9ec; --muted: #93a1aa; --line: #2e373d;
+  --accent: #f0962e; --scene: #11151a; --stock: #b8936a; --stock-cut: #5a3f22;
+  --feed: #5aa7e6; --rapid: #ff6a5f; --ok: #5cc184; --warn: #e6a640; --err: #ff6a5f; color-scheme: dark }
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); display: flex; flex-direction: column;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px; box-sizing: border-box; gap: 10px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+h1 { font-family: var(--display); font-weight: 600; font-size: 1.25rem; margin: 0; letter-spacing: .01em; }
+.sub { color: var(--muted); font-size: .85rem; }
+.verdict { font-family: var(--display); font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
+  padding: 2px 8px; border-radius: 3px; border: 1px solid currentColor; }
+.verdict.ok { color: var(--ok); } .verdict.bad { color: var(--err); } .verdict.warn { color: var(--warn); }
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 10px; }
+#stage { position: relative; min-height: 280px; background: var(--scene); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.hint { position: absolute; left: 10px; bottom: 8px; font-size: .75rem; color: var(--muted); pointer-events: none; }
+aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; min-width: 0; }
+.label { font-family: var(--display); font-size: .72rem; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 0 0 6px; }
+.dro { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.dro b { font-weight: 600; color: var(--muted); }
+.dro span { text-align: right; font-size: 1.1rem; }
+.state { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-family: var(--mono); font-size: .8rem; }
+.chip { padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line); }
+.chip.on { border-color: var(--accent); color: var(--accent); }
+.chip.change { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+#gline { font-family: var(--mono); font-size: .8rem; margin-top: 8px; white-space: nowrap; overflow-x: auto; color: var(--muted); }
+#issues { flex: 1; min-height: 80px; overflow: auto; }
+#issues ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#issues li button { all: unset; cursor: pointer; display: block; font-size: .82rem; line-height: 1.35; padding: 3px 6px; border-radius: 3px; border-left: 3px solid var(--err); }
+#issues li.warning button { border-left-color: var(--warn); }
+#issues li button:hover, #issues li button:focus-visible { background: var(--bg); outline: 1px solid var(--line); }
+#issues .none { color: var(--ok); font-size: .85rem; }
+.toggles { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; }
+.transport { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 8px 12px; }
+.transport button { font: 600 .85rem var(--display); letter-spacing: .05em; text-transform: uppercase; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 3px; padding: 6px 12px; cursor: pointer; }
+.transport button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); min-width: 74px; }
+.transport button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#scrub { flex: 1; min-width: 160px; accent-color: var(--accent); }
+.time { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .85rem; color: var(--muted); }
+select { font: inherit; font-size: .85rem; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 4px; }
+@media (max-width: 760px) {
+  html, body { height: auto; }
+  main { grid-template-columns: minmax(0, 1fr); }
+  #stage { height: 60vh; }
+}
+</style>
+
+<header>
+  <h1 id="title"></h1>
+  <span class="sub" id="summary"></span>
+  <span class="verdict" id="verdict"></span>
+</header>
+<main>
+  <div id="stage"><span class="hint">Drag to orbit, right-drag or two fingers to pan, wheel or pinch to zoom</span></div>
+  <aside>
+    <div class="box">
+      <p class="label">Position (work coordinates, mm / deg)</p>
+      <div class="dro">
+        <b>X</b><span id="dx">0.000</span>
+        <b>Y</b><span id="dy">0.000</span>
+        <b>Z</b><span id="dz">0.000</span>
+        <b>A</b><span id="da">0.000</span>
+      </div>
+      <div class="state">
+        <span class="chip" id="ctool">T0</span>
+        <span class="chip" id="cspin">Spindle off</span>
+        <span class="chip" id="cmove">G0</span>
+      </div>
+      <div id="gline"></div>
+    </div>
+    <div class="box" id="issues">
+      <p class="label">Checks</p>
+      <ul id="ilist"></ul>
+    </div>
+    <div class="box toggles">
+      <label><input type="checkbox" id="trapids" checked> Show rapid moves</label>
+      <label><input type="checkbox" id="tpath" checked> Show toolpath</label>
+      <label><input type="checkbox" id="tstock" checked> Show stock</label>
+    </div>
+  </aside>
+</main>
+<div class="transport">
+  <button class="primary" id="play">Play</button>
+  <button id="restart">Restart</button>
+  <button id="end">Result</button>
+  <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Program position">
+  <label class="time" for="speed">Speed</label>
+  <select id="speed">
+    <option value="5">5×</option><option value="20">20×</option><option value="60" selected>60×</option>
+    <option value="200">200×</option><option value="1000">1000×</option>
+  </select>
+  <span class="time" id="clock">0:00 / 0:00</span>
+</div>
+
+__THREE_SCRIPT__
+<script type="application/json" id="data">__DATA__</script>
+<script>
+(function () {
+const D = JSON.parse(document.getElementById("data").textContent);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const $ = id => document.getElementById(id);
+const rotary = D.stock && D.stock.type === "cylinder";
+
+// ---------- moves: [kind, x, y, z, a, tool, line, seconds, spindle] -------------
+const M = D.moves, N = M.length;
+const start = [0, 0, 0, 0];
+const cum = new Float64Array(N + 1);
+for (let i = 0; i < N; i++) cum[i + 1] = cum[i] + M[i][7];
+const total = cum[N];
+const P = i => i < 0 ? start : [M[i][1], M[i][2], M[i][3], M[i][4]];
+
+$("title").textContent = D.title;
+const fmtT = s => { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(ss).padStart(2, "0"); };
+const toolChanges = new Set(M.map(m => m[5])).size;
+$("summary").textContent = `${N.toLocaleString()} moves · ${toolChanges} tool${toolChanges === 1 ? "" : "s"} · est. ${fmtT(total)} machine time` + (rotary ? " · rotary A" : "");
+const nErr = D.issues.filter(i => i.level === "error").length, nWarn = D.issues.length - nErr;
+const v = $("verdict");
+v.textContent = nErr ? `${nErr} error${nErr > 1 ? "s" : ""}` : nWarn ? `${nWarn} warning${nWarn > 1 ? "s" : ""}` : "Checks passed";
+v.className = "verdict " + (nErr ? "bad" : nWarn ? "warn" : "ok");
+
+// ---------- three.js scene in machine coordinates (Z up) -------------
+const stage = $("stage");
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 20000);
+const root = new THREE.Group(); root.rotation.x = -Math.PI / 2; scene.add(root);   // machine Z up -> three Y up
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.9));
+const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(1, 3, 2); scene.add(sun);
+const stockGroup = new THREE.Group(); root.add(stockGroup);    // rotates with A on rotary jobs
+const col = n => new THREE.Color(css(n));
+
+// path: one LineSegments per kind, revealed with drawRange as the program plays
+function pathPoint(p) {
+  if (!rotary) return [p[0], p[1], p[2]];
+  const a = p[3] * Math.PI / 180;           // point on the stock at angle a and radius z
+  return [p[0], -p[2] * Math.sin(a), p[2] * Math.cos(a)];
+}
+function buildPath(kind) {
+  const pos = [], idx = [];
+  for (let i = 0; i < N; i++) {
+    if (M[i][0] !== kind) continue;
+    const a = P(i - 1), b = P(i);
+    const steps = rotary && a[3] !== b[3] ? Math.min(64, Math.ceil(Math.abs(b[3] - a[3]) / 3)) : 1;
+    for (let s = 0; s < steps; s++) {
+      const t0 = s / steps, t1 = (s + 1) / steps;
+      const q0 = a.map((v, k) => v + (b[k] - v) * t0), q1 = a.map((v, k) => v + (b[k] - v) * t1);
+      pos.push(...pathPoint(q0), ...pathPoint(q1)); idx.push(i);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  const mat = kind === 1 ? new THREE.LineBasicMaterial({ color: col("--feed") })
+                         : new THREE.LineDashedMaterial({ color: col("--rapid"), dashSize: 2, gapSize: 1.5 });
+  const line = new THREE.LineSegments(g, mat);
+  if (kind === 0) line.computeLineDistances();
+  line.userData.moveIdx = idx;   // move index of each segment, for drawRange
+  stockGroup.add(line);
+  return line;
+}
+const feedLine = buildPath(1), rapidLine = buildPath(0);
+function reveal(line, upto) {      // show segments whose move index < upto
+  const idx = line.userData.moveIdx; let lo = 0, hi = idx.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (idx[mid] < upto) lo = mid + 1; else hi = mid; }
+  line.geometry.setDrawRange(0, lo * 2);
+}
+
+// ---------- stock with live material removal -------------
+const S = D.stock;
+let grid = null, stockMesh = null;
+if (S) {
+  let nx, ny, x0, y0, res, base;
+  if (rotary) {
+    x0 = S.x[0]; res = Math.max(0.4, (S.x[1] - S.x[0]) / 320);
+    nx = Math.ceil((S.x[1] - x0) / res) + 1; base = S.diameter / 2;
+    ny = Math.max(90, Math.min(720, Math.ceil(Math.PI * S.diameter / res)));
+  } else {
+    x0 = S.x[0]; y0 = S.y[0];
+    res = Math.max(0.25, Math.max(S.x[1] - S.x[0], S.y[1] - S.y[0]) / 360);
+    nx = Math.ceil((S.x[1] - x0) / res) + 1; ny = Math.ceil((S.y[1] - y0) / res) + 1; base = S.z[1];
+  }
+  grid = { nx, ny, x0, y0, res, base, h: new Float32Array(nx * ny).fill(base), dirty: false };
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(nx * ny * 3), colr = new Float32Array(nx * ny * 3), index = [];
+  for (let i = 0; i < nx - 1; i++) for (let j = 0; j < ny - 1 + (rotary ? 1 : 0); j++) {
+    const jn = (j + 1) % ny, a = i * ny + j, b = (i + 1) * ny + j, c = (i + 1) * ny + jn, d = i * ny + jn;
+    index.push(a, b, d, b, c, d);
+  }
+  g.setIndex(index);
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.BufferAttribute(colr, 3));
+  stockMesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+  stockGroup.add(stockMesh);
+  if (!rotary) {   // the block's sides and bottom as a faint box
+    const bx = new THREE.Mesh(new THREE.BoxGeometry(S.x[1] - S.x[0], S.y[1] - S.y[0], S.z[1] - S.z[0]),
+      new THREE.MeshLambertMaterial({ color: col("--stock"), transparent: true, opacity: 0.25, depthWrite: false }));
+    bx.position.set((S.x[0] + S.x[1]) / 2, (S.y[0] + S.y[1]) / 2, (S.z[0] + S.z[1]) / 2 - 0.05);
+    stockGroup.add(bx);
+  }
+  refreshStock(true);
+}
+function refreshStock() {
+  if (!grid) return;
+  const { nx, ny, x0, y0, res, base, h } = grid;
+  const pos = stockMesh.geometry.attributes.position.array, c = stockMesh.geometry.attributes.color.array;
+  const top = col("--stock"), deep = col("--stock-cut");
+  const span = rotary ? base * 0.5 : Math.max(1, (S.z[1] - S.z[0]) * 0.5);
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+    const k = i * ny + j, v = h[k], o = k * 3;
+    if (rotary) { const a = j / ny * 2 * Math.PI; pos[o] = x0 + i * res; pos[o + 1] = -v * Math.sin(a); pos[o + 2] = v * Math.cos(a); }
+    else { pos[o] = x0 + i * res; pos[o + 1] = y0 + j * res; pos[o + 2] = v; }
+    const t = Math.min(1, (base - v) / span), f = t > 0 ? 0.25 + 0.75 * t : 0;
+    c[o] = top.r + (deep.r - top.r) * f; c[o + 1] = top.g + (deep.g - top.g) * f; c[o + 2] = top.b + (deep.b - top.b) * f;
+  }
+  stockMesh.geometry.attributes.position.needsUpdate = true;
+  stockMesh.geometry.attributes.color.needsUpdate = true;
+  stockMesh.geometry.computeVertexNormals();
+  grid.dirty = false;
+}
+function toolInfo(t) { return D.tools[t] || { diameter: 3, kind: "flat" }; }
+function profile(d, tl) {
+  const r = tl.diameter / 2;
+  if (tl.kind === "vbit") return d / Math.tan((tl.v_angle || 90) * Math.PI / 360);
+  if (tl.kind === "ball") return r - Math.sqrt(Math.max(0, r * r - d * d));
+  return 0;
+}
+function stamp(p, tl) {     // remove material under the tool at p = [x, y, z, a]
+  const { nx, ny, x0, y0, res, h } = grid, r = tl.diameter / 2;
+  const i0 = Math.max(0, Math.floor((p[0] - r - x0) / res)), i1 = Math.min(nx - 1, Math.ceil((p[0] + r - x0) / res));
+  if (i0 > i1) return;
+  if (rotary) {
+    const ares = 360 / ny, span = Math.ceil((r / grid.base) * 180 / Math.PI / ares) + 1;
+    const jc = Math.round((((p[3] % 360) + 360) % 360) / ares);
+    for (let i = i0; i <= i1; i++) for (let dj = -span; dj <= span; dj++) {
+      const j = ((jc + dj) % ny + ny) % ny, dx = x0 + i * res - p[0];
+      let da = (j * ares - p[3]) % 360; da = ((da + 540) % 360) - 180;
+      const d = Math.hypot(dx, da * Math.PI / 180 * grid.base);
+      if (d > r) continue;
+      const z = p[2] + profile(d, tl), k = i * ny + j;
+      if (z < h[k]) { h[k] = z; grid.dirty = true; }
+    }
+  } else {
+    const j0 = Math.max(0, Math.floor((p[1] - r - y0) / res)), j1 = Math.min(ny - 1, Math.ceil((p[1] + r - y0) / res));
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const d = Math.hypot(x0 + i * res - p[0], y0 + j * res - p[1]);
+      if (d > r) continue;
+      const z = p[2] + profile(d, tl), k = i * ny + j;
+      if (z < h[k]) { h[k] = z; grid.dirty = true; }
+    }
+  }
+}
+function cutSegment(i, t0, t1) {     // stamp move i between fractions t0..t1
+  if (!grid || M[i][0] !== 1) return;
+  const a = P(i - 1), b = P(i), tl = toolInfo(M[i][5]);
+  let len = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  if (rotary) len = Math.hypot(len, (b[3] - a[3]) * Math.PI / 180 * grid.base);
+  const steps = Math.max(1, Math.ceil(len * (t1 - t0) / (grid.res * 0.7)));
+  for (let s = 1; s <= steps; s++) {
+    const t = t0 + (t1 - t0) * s / steps;
+    stamp(a.map((v, k) => v + (b[k] - v) * t), tl);
+  }
+}
+
+// ---------- tool model -------------
+const toolGroup = new THREE.Group(); root.add(toolGroup);
+function buildTool(t) {
+  toolGroup.clear();
+  const tl = toolInfo(t), r = tl.diameter / 2, flute = tl.flute_length || 15;
+  const mat = new THREE.MeshLambertMaterial({ color: col("--accent") });
+  const shank = new THREE.MeshLambertMaterial({ color: 0x9aa5ad });
+  const add = (geo, m, z) => { const o = new THREE.Mesh(geo, m); o.rotation.x = Math.PI / 2; o.position.z = z; toolGroup.add(o); };
+  if (tl.kind === "vbit") {
+    const hcone = r / Math.tan((tl.v_angle || 90) * Math.PI / 360);
+    add(new THREE.ConeGeometry(r, hcone, 32), mat, hcone / 2);
+    toolGroup.children[0].rotation.x = -Math.PI / 2;
+    add(new THREE.CylinderGeometry(r, r, 20, 32), shank, hcone + 10);
+  } else {
+    if (tl.kind === "ball") { const s = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), mat); s.position.z = r; toolGroup.add(s); }
+    add(new THREE.CylinderGeometry(r, r, flute, 32), mat, (tl.kind === "ball" ? r : 0) + flute / 2);
+    add(new THREE.CylinderGeometry(r, r, 20, 32), shank, flute + 10);
+  }
+  toolGroup.userData.tool = t;
+}
+
+// ---------- issues -------------
+const ilist = $("ilist");
+if (!D.issues.length) ilist.innerHTML = '<li class="none">No crashes, limit or tool problems found.</li>';
+const markers = new THREE.Group(); stockGroup.add(markers);
+D.issues.forEach(is => {
+  const li = document.createElement("li"); li.className = is.level;
+  const b = document.createElement("button");
+  b.textContent = `Line ${is.line}: ${is.message}`;
+  b.onclick = () => { pause(); seekTime(cum[Math.max(0, is.move)] + (M[is.move] ? M[is.move][7] : 0)); };
+  li.append(b); ilist.append(li);
+  if (is.move >= 0 && is.move < N) {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(1.2, 12, 8), new THREE.MeshBasicMaterial({ color: col(is.level === "error" ? "--err" : "--warn") }));
+    s.position.set(...pathPoint(P(is.move))); markers.add(s);
+  }
+});
+
+// ---------- playback -------------
+let time = 0, applied = 0, appliedT = 0, playing = false;   // material removed up to move `applied`, fraction appliedT
+function moveAt(t) {     // index of move containing time t
+  let lo = 0, hi = N - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid + 1] <= t) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+function resetStock() { if (grid) { grid.h.fill(grid.base); grid.dirty = true; } applied = 0; appliedT = 0; }
+function advanceCut(i, t) {
+  if (i < applied || (i === applied && t < appliedT)) resetStock();
+  while (applied < i) { cutSegment(applied, appliedT, 1); applied++; appliedT = 0; }
+  if (t > appliedT) { cutSegment(i, appliedT, t); appliedT = t; }
+}
+function seekTime(t) { time = Math.max(0, Math.min(total, t)); update(); }
+function update() {
+  if (!N) return;
+  const i = moveAt(time), m = M[i], dur = m[7] || 1e-9;
+  const f = Math.max(0, Math.min(1, (time - cum[i]) / dur));
+  const a = P(i - 1), b = P(i), p = a.map((v, k) => v + (b[k] - v) * f);
+  advanceCut(i, f);
+  if (grid && grid.dirty) refreshStock();
+  reveal(feedLine, i + (f > 0 ? 1 : 0)); reveal(rapidLine, i + (f > 0 ? 1 : 0));
+  if (toolGroup.userData.tool !== m[5]) buildTool(m[5]);
+  if (rotary) { toolGroup.position.set(p[0], 0, p[2]); stockGroup.rotation.x = -p[3] * Math.PI / 180; }
+  else toolGroup.position.set(p[0], p[1], p[2]);
+  $("dx").textContent = p[0].toFixed(3); $("dy").textContent = p[1].toFixed(3);
+  $("dz").textContent = p[2].toFixed(3); $("da").textContent = p[3].toFixed(3);
+  const changed = i > 0 && M[i - 1][5] !== m[5] && f < 1;
+  $("ctool").textContent = (changed ? "Tool change → " : "") + "T" + m[5] + (D.tools[m[5]] && D.tools[m[5]].name ? " " + D.tools[m[5]].name : "");
+  $("ctool").className = "chip" + (changed ? " change" : " on");
+  $("cspin").textContent = m[8] ? "Spindle on" : "Spindle off"; $("cspin").className = "chip" + (m[8] ? " on" : "");
+  $("cmove").textContent = m[0] ? "G1 feed" : "G0 rapid";
+  $("gline").textContent = `N${m[6]}  ${D.lines[m[6]] || ""}`;
+  $("scrub").value = Math.round(time / total * 1000);
+  $("clock").textContent = `${fmtT(time)} / ${fmtT(total)}`;
+}
+let last = 0;
+function tick(ts) {
+  if (playing) {
+    const dt = last ? (ts - last) / 1000 : 0;
+    time += dt * +$("speed").value;
+    if (time >= total) { time = total; pause(); }
+    update();
+  }
+  last = ts;
+  render();
+  requestAnimationFrame(tick);
+}
+function play() { if (time >= total) seekTime(0); playing = true; $("play").textContent = "Pause"; }
+function pause() { playing = false; $("play").textContent = "Play"; }
+$("play").onclick = () => playing ? pause() : play();
+$("restart").onclick = () => { pause(); seekTime(0); };
+$("end").onclick = () => { pause(); seekTime(total); };
+$("scrub").oninput = e => { pause(); seekTime(e.target.value / 1000 * total); };
+$("trapids").onchange = e => rapidLine.visible = e.target.checked;
+$("tpath").onchange = e => { feedLine.visible = e.target.checked; markers.visible = e.target.checked; };
+$("tstock").onchange = e => stockGroup.children.forEach(c => { if (c !== feedLine && c !== rapidLine && c !== markers) c.visible = e.target.checked; });
+
+// ---------- camera: simple orbit / pan / zoom -------------
+const box = new THREE.Box3().setFromObject(stockGroup);
+const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length() || 100;
+let az = -0.6, el = 0.75, dist = size * 1.25; const target = center.clone();
+function placeCamera() {
+  camera.position.set(target.x + dist * Math.cos(el) * Math.sin(az), target.y + dist * Math.sin(el), target.z + dist * Math.cos(el) * Math.cos(az));
+  camera.lookAt(target);
+}
+const ptrs = new Map(); let pinch = 0;
+renderer.domElement.addEventListener("contextmenu", e => e.preventDefault());
+renderer.domElement.addEventListener("pointerdown", e => { renderer.domElement.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, b: e.button }); });
+renderer.domElement.addEventListener("pointerup", e => { ptrs.delete(e.pointerId); pinch = 0; });
+renderer.domElement.addEventListener("pointermove", e => {
+  const p = ptrs.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinch) dist *= pinch / d; pinch = d; pan(dx / 2, dy / 2);
+  } else if (p.b === 2 || e.shiftKey) pan(dx, dy);
+  else { az -= dx * 0.008; el = Math.max(-1.5, Math.min(1.5, el + dy * 0.008)); }
+  placeCamera();
+});
+function pan(dx, dy) {
+  const s = dist * 0.0015, right = new THREE.Vector3(), up = new THREE.Vector3();
+  camera.matrix.extractBasis(right, up, new THREE.Vector3());
+  target.addScaledVector(right, -dx * s).addScaledVector(up, dy * s);
+}
+renderer.domElement.addEventListener("wheel", e => { e.preventDefault(); dist *= Math.exp(e.deltaY * 0.001); placeCamera(); }, { passive: false });
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
+}
+function render() { scene.background = col("--scene"); renderer.render(scene, camera); }
+new ResizeObserver(resize).observe(stage);
+resize(); placeCamera();
+
+// open on the finished result so the first view shows what the program makes
+if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) $("speed").value = "1000";
+seekTime(total);
+requestAnimationFrame(tick);
+})();
+</script>

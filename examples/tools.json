@@ -1,0 +1,7 @@
+{
+  "em3":  {"number": 1, "diameter": 3.175, "kind": "flat", "flute_length": 12},
+  "em6":  {"number": 2, "diameter": 6.0,   "kind": "flat", "flute_length": 22},
+  "ball3": {"number": 3, "diameter": 3.0,  "kind": "ball", "flute_length": 12},
+  "v60":  {"number": 4, "diameter": 12.7,  "kind": "vbit", "v_angle": 60},
+  "v90":  {"number": 5, "diameter": 12.7,  "kind": "vbit", "v_angle": 90}
+}

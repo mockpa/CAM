@@ -54,7 +54,10 @@ def run_sim(gcode: str, mdata: dict, machine_path: Path, library: dict, image: s
         (work / "program.ngc").write_text(gcode)
         shutil.copy(machine_path.parent / sim["ini"], work / "machine.ini")
         (work / "machine.var").write_text(sim_var(mdata["work_offset"]))
-        (work / "tool.tbl").write_text(to_tbl(library))
+        if mdata.get("tool_table"):           # the controller's real table, as on the machine
+            shutil.copy(machine_path.parent / mdata["tool_table"], work / "tool.tbl")
+        else:
+            (work / "tool.tbl").write_text(to_tbl(library))
         try:
             p = subprocess.run(["docker", "run", "--rm", "-v", f"{work}:/work", image,
                                 "check", "/work/program.ngc"],

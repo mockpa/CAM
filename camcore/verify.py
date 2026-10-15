@@ -8,7 +8,9 @@ Checks
 - cutting deeper than the tool's flute length               -> warning
 - feeding into material steeper than 45 deg with a tool that
   is not marked center_cutting (a plunge)                   -> error
-- tool numbers missing from the machine's tool table / ATC  -> error
+- tool numbers missing from the machine's tool table, the
+  controller's tool.tbl, or without an ATC pocket          -> error
+- spindle started with the touch probe loaded               -> error
 - cutting without a tool or without G43 length offset       -> error / warning
 - A-axis moves on a machine without one, G93 moves without F -> error
 - G2/G3 arcs (XY plane, I J centre, helical Z allowed) are replayed in short
@@ -64,13 +66,31 @@ class Machine:
     has_a: bool = True
     rapid_rate: float = 5000.0                      # mm/min, used for time estimates
     tools: dict = field(default_factory=dict)       # number -> {"diameter", "kind", "v_angle", "flute_length", "center_cutting"}
+    atc_pockets: int | None = None                  # tool numbers 1..atc_pockets (plus the probe) are valid
+    probe_tool: int | None = None                   # touch probe: may be loaded, never with the spindle on
+    table_numbers: set | None = None                # tool numbers in the controller's real tool.tbl
 
     @staticmethod
     def load(path) -> "Machine":
-        d = json.loads(Path(path).read_text())
+        path = Path(path)
+        d = json.loads(path.read_text())
         tools = {int(k): v for k, v in d.get("tools", {}).items()}
+        table = None
+        if d.get("tool_table"):
+            table = read_tool_table(path.parent / d["tool_table"])
         return Machine(d.get("travel", Machine().travel), d.get("work_offset", Machine().work_offset),
-                       d.get("has_a", True), d.get("rapid_rate", 5000.0), tools)
+                       d.get("has_a", True), d.get("rapid_rate", 5000.0), tools,
+                       d.get("atc_pockets"), d.get("probe_tool"), table)
+
+
+def read_tool_table(path) -> set:
+    """Tool numbers in a LinuxCNC tool table (lines like "T3 P3 Z0 D6 ;comment")."""
+    nums = set()
+    for line in Path(path).read_text().splitlines():
+        m = re.match(r"\s*T(\d+)\b", line.split(";")[0], re.I)
+        if m:
+            nums.add(int(m.group(1)))
+    return nums
 
 
 class Stock:
@@ -251,6 +271,12 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
             prepped = int(w["T"][0])
             if machine.tools and prepped not in machine.tools:
                 issues.append(Issue("error", n, f"T{prepped} is not in the machine's tool table"))
+            if machine.table_numbers is not None and prepped not in machine.table_numbers:
+                issues.append(Issue("error", n, f"T{prepped} is not in the controller's tool.tbl"))
+            if (machine.atc_pockets and prepped != machine.probe_tool
+                    and not 1 <= prepped <= machine.atc_pockets):
+                issues.append(Issue("error", n, f"T{prepped} has no ATC pocket (pockets 1..{machine.atc_pockets}"
+                                    + (f", probe T{machine.probe_tool})" if machine.probe_tool else ")")))
         if 6 in ms:
             tool, offset_on = prepped or 0, False
         if 43 in gs:
@@ -262,6 +288,8 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
             offset_on = False
         if 3 in ms or 4 in ms:
             spindle = True
+            if machine.probe_tool is not None and tool == machine.probe_tool:
+                issues.append(Issue("error", n, f"spindle started with the touch probe T{tool} loaded"))
         if 5 in ms or 2 in ms or 30 in ms:
             spindle = False
         for g in gs:

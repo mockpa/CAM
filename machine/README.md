@@ -6,10 +6,13 @@ from the build plan, not from a running machine:
 - travel 1035 x 1035 x 150 mm, home switches back/left/top (X min, Y max, Z top)
 - rapids about 17 m/min (critical speed of the 1200 mm SFU1610 screws)
 - A axis planned, up to about 150 mm swing diameter
-- touch probe is tool 99 (it lives in an ATC pocket; the spindle must never start with it loaded)
+- Benchworks ATC, 6 pockets (`atc_pockets`, tool number = pocket); the M6 remap measures tool length
+- touch probe is tool 99 (`probe_tool`; verify refuses a spindle start with it loaded)
+- `tool_table`: set it to the real LinuxCNC `tool.tbl` once it exists; verify then refuses unknown tool numbers
+  and `camcore check` runs the sim with that table
 - the G54 offset (20, 20, -120) is a placeholder
 
-`a_max_diameter` and `probe_tool` are recorded for later steps; nothing enforces them yet.
+`a_max_diameter` is recorded for the rotary steps; nothing enforces it yet.
 
 | File | Used by |
 |---|---|

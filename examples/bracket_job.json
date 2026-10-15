@@ -1,16 +1,68 @@
 {
   "post": "linuxcnc",
   "tool_library": "tools.json",
-  "stock": {"type": "box", "x": [0, 100], "y": [0, 70], "z": [-6, 0]},
-  "defaults": {"safe_z": 5.0, "ramp_angle": 2.0},
+  "material": "aluminium",
+  "stock": {
+    "type": "box",
+    "x": [
+      0,
+      100
+    ],
+    "y": [
+      0,
+      70
+    ],
+    "z": [
+      -6,
+      0
+    ]
+  },
+  "defaults": {
+    "safe_z": 5.0
+  },
   "shapes": {
-    "part":   {"type": "dxf", "file": "bracket.dxf", "layers": ["CUT"], "fit_origin": [10, 10]},
-    "recess": {"type": "dxf", "file": "bracket.dxf", "layers": ["POCKET"], "fit_origin": [35, 22]}
+    "part": {
+      "type": "dxf",
+      "file": "bracket.dxf",
+      "layers": [
+        "CUT"
+      ],
+      "fit_origin": [
+        10,
+        10
+      ]
+    },
+    "recess": {
+      "type": "dxf",
+      "file": "bracket.dxf",
+      "layers": [
+        "POCKET"
+      ],
+      "fit_origin": [
+        35,
+        22
+      ]
+    }
   },
   "operations": [
-    {"op": "pocket", "shape": "recess", "tool": "em3", "depth": 2, "step_down": 1,
-     "stepover_ratio": 0.4, "feed": 800, "plunge": 200},
-    {"op": "profile", "shape": "part", "tool": "em3", "side": "outside", "depth": 6.3, "step_down": 1,
-     "feed": 800, "plunge": 200, "lead_radius": 3, "tabs": {"count": 3, "width": 5, "height": 1}}
+    {
+      "op": "pocket",
+      "shape": "recess",
+      "tool": "em3",
+      "depth": 2
+    },
+    {
+      "op": "profile",
+      "shape": "part",
+      "tool": "em3",
+      "side": "outside",
+      "depth": 6.3,
+      "lead_radius": 3,
+      "tabs": {
+        "count": 3,
+        "width": 5,
+        "height": 1
+      }
+    }
   ]
 }

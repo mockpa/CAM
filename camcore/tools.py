@@ -36,7 +36,8 @@ class Tool:
 
     @staticmethod
     def from_dict(d: dict) -> "Tool":
-        return Tool(**d)
+        """From a library entry; its "cutting" data (feeds and speeds per material) is read by the job."""
+        return Tool(**{k: v for k, v in d.items() if k != "cutting"})
 
 
 def load_library(path) -> dict[str, Tool]:

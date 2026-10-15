@@ -27,7 +27,21 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
   marked `"center_cutting": true` in the library. `camcore-verify` independently reports any feed into material
   steeper than 45 deg with a tool that is not centre-cutting.
 - **Rotary (wrapped)**: `"rotary": {"diameter": 40}` wraps any job around the A axis (Y becomes A, Z0 on the axis centreline), with G93 inverse-time feeds.
-- **Tool library / ATC**: `"tool_library": "tools.json"` with tool numbers; LinuxCNC post emits `Tn M6`, `G43 Hn` and stages the next tool; `"tool_order": "minimize_changes"` groups ops by tool.
+- **Tool library / ATC**: `"tool_library": "tools.json"` with tool numbers (= ATC pocket); the LinuxCNC post emits
+  `Tn M6`, `G43 Hn` and stages the next tool. Tool length is measured by the machine's M6 remap, not by camcore.
+  The machine JSON can set `"atc_pockets": 6` (other numbers are errors), `"probe_tool": 99` (may be loaded, the
+  spindle must never start with it) and `"tool_table": "tool.tbl"` (the controller's real table: tool numbers
+  missing from it are errors, and the LinuxCNC sim runs with it).
+- **Feeds and speeds per material**: a library tool can carry `"cutting": {"aluminium": {"rpm": .., "feed": ..,
+  "plunge": .., "step_down": .., "stepover_ratio": .., "ramp_angle": ..}, ...}` and a job sets `"material"`.
+  An operation's own values win, then the tool's material data, then the job's `"defaults"`; the last two only
+  fill parameters the operation takes. A tool without data for the job's material is an error. The values in
+  `examples/tools.json` (aluminium, hardwood, softwood, mdf, acrylic) are conservative starting points for
+  2-flute carbide: tune them for your tools.
+- **Cutting order**: operations run as written, except that one with `"after": ["id", ...]` waits for those
+  (`"id"` names an operation). `"tool_order": "minimize_changes"` stays on the loaded tool while any operation
+  for it is ready, without breaking an `after`; a flat-bottom V-carve's clearing pass always precedes its
+  V-bit pass.
 - **Import**: shapes in the job file (rect, circle, polygon, union, difference), SVG and DXF; nested contours
   become holes (even-odd). `"fit_origin": [x, y]` moves a drawing's lower-left corner there.
   - **SVG** (`{"type": "svg", "file": ..., "scale": 1}`): path (M L H V C S Q T A Z), polygon, polyline, rect,

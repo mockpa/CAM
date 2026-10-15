@@ -1,11 +1,13 @@
 {
-  "_comment": "PROVISIONAL PrintNC V4 Metalcutter profile (machine not built yet). From the build plan: travel about 1035 x 1035 x 150 mm, home switches back/left/top (X min, Y max, Z top), rapids limited to about 17 m/min by the 1200 mm SFU1610 screws, 4th axis up to about 150 mm swing diameter, touch probe is T99. The work offset is a placeholder. Replace this file with an import of the real LinuxCNC config (IMPLEMENTATION_GUIDE step 4).",
+  "_comment": "PROVISIONAL PrintNC V4 Metalcutter profile (machine not built yet). From the build plan: travel about 1035 x 1035 x 150 mm, home switches back/left/top (X min, Y max, Z top), rapids limited to about 17 m/min by the 1200 mm SFU1610 screws, 4th axis up to about 150 mm swing diameter, Benchworks ATC with 6 pockets (tool number = pocket, the M6 remap measures tool length), touch probe is T99. Set tool_table to the real LinuxCNC tool.tbl once it exists. The work offset is a placeholder. Replace this file with an import of the real LinuxCNC config (IMPLEMENTATION_GUIDE step 4).",
   "travel": {"x": [0, 1035], "y": [0, 1035], "z": [-150, 0]},
   "work_offset": {"x": 20, "y": 20, "z": -120},
   "has_a": true,
   "rapid_rate": 17000,
   "a_max_diameter": 150,
   "probe_tool": 99,
+  "atc_pockets": 6,
+  "tool_table": null,
   "sim": {"ini": "printnc_sim.ini"},
   "stock": {"type": "box", "x": [0, 160], "y": [0, 90], "z": [-18, 0]}
 }

@@ -1,6 +1,7 @@
 """JSON job files: stock, tools, shapes and an ordered list of operations."""
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 
@@ -14,7 +15,6 @@ from .post import job_post
 from .svg import load_svg
 from .tools import Tool, load_library
 
-ENTRY_KEYS = ("entry", "ramp_angle", "helix_diameter")
 
 
 def build_shape(spec: dict, base_dir: Path):
@@ -44,22 +44,53 @@ def build_shape(spec: dict, base_dir: Path):
 
 
 def run_job(job: dict, base_dir: Path = Path(".")):
+    """Build the toolpaths of a job, in cutting order.
+
+    Parameters of an operation come from, highest first: the operation itself,
+    the tool's "cutting" data for the job's "material", the job's "defaults".
+    The last two only supply parameters the operation actually takes.
+    """
+    raw = {}
+    if "tool_library" in job:
+        raw.update(json.loads((base_dir / job["tool_library"]).read_text()))
+    raw.update(job.get("tools", {}))
     tools = {}
     if "tool_library" in job:
         tools.update(load_library(base_dir / job["tool_library"]))
     tools.update({k: Tool.from_dict({"name": k, **v}) for k, v in job.get("tools", {}).items()})
     shapes = {k: build_shape(v, base_dir) for k, v in job["shapes"].items()}
     defaults = job.get("defaults", {})
-    paths = []
-    for spec_own in job["operations"]:
-        spec = {**defaults, **spec_own}
-        kind = spec.pop("op")
-        tool = tools[spec.pop("tool")]
+    material = job.get("material")
+
+    def params(fn, tool_name, own):
+        """Merged parameters for op function fn using tool_name; own = the op's own keys."""
+        cut = {}
+        if material is not None:
+            data = raw.get(tool_name, {}).get("cutting", {})
+            if material not in data:
+                raise ValueError(f"tool {tool_name} has no cutting data for material {material!r} "
+                                 f"(add \"cutting\": {{\"{material}\": {{...}}}} to it in the library)")
+            cut = data[material]
+        takes = set(inspect.signature(fn).parameters) | {"rpm"}
+        merged = {k: v for src in (defaults, cut) for k, v in src.items() if k in takes}
+        merged.update(own)
+        return merged
+
+    nodes, by_id = [], {}                    # nodes: [toolpath, node id, deps], in written order
+    for idx, spec_own in enumerate(job["operations"]):
+        spec_own = dict(spec_own)
+        kind = spec_own.pop("op")
+        op_id = spec_own.pop("id", f"#{idx + 1}")
+        after = spec_own.pop("after", [])
+        if op_id in by_id:
+            raise ValueError(f"duplicate operation id {op_id!r}")
+        tool_name = spec_own.pop("tool")
+        fn = getattr(ops, kind)
+        spec = params(fn, tool_name, spec_own)
+        tool = tools[tool_name]
         rpm = spec.pop("rpm", 18000)
+        mine = []
         if kind == "drill":
-            for k in ENTRY_KEYS:
-                if k in defaults and k not in spec_own:
-                    spec.pop(k)
             pts = spec.pop("points")
             tp = ops.drill(pts, tool, **spec)
         else:
@@ -72,35 +103,50 @@ def run_job(job: dict, base_dir: Path = Path(".")):
                 if "max_depth" not in spec:
                     raise ValueError("vcarve with clear_tool needs max_depth")
                 flat = ops.vcarve_flat_bottom_area(shape, tool, spec["max_depth"])
-                ct = ops.pocket(flat, tools[clear], spec["max_depth"],
-                                top_z=spec.get("top_z", 0.0), safe_z=spec.get("safe_z", 5.0),
-                                name="vcarve-clear", **{"step_down": spec["max_depth"], **clear_args})
-                ct.spindle_rpm = rpm
-                paths.append(ct)
-            tp = getattr(ops, kind)(shape, tool, **spec)
+                cargs = params(ops.pocket, clear, {"top_z": spec.get("top_z", 0.0), "safe_z": spec.get("safe_z", 5.0),
+                                                   "step_down": spec["max_depth"], **clear_args})
+                crpm = cargs.pop("rpm", rpm)
+                ct = ops.pocket(flat, tools[clear], spec["max_depth"], name="vcarve-clear", **cargs)
+                ct.spindle_rpm = crpm
+                mine.append([ct, f"{op_id}:clear", set(after)])
+            tp = fn(shape, tool, **spec)
         tp.spindle_rpm = rpm
-        paths.append(tp)
+        mine.append([tp, op_id, set(after) | {n[1] for n in mine}])   # the V-bit pass waits for its clearing
+        by_id[op_id] = [n[1] for n in mine]
+        nodes += mine
+    node_ids = {n[1] for n in nodes}
+    for n in nodes:                         # "after": an op id stands for all of its passes
+        deps = set()
+        for d in n[2]:
+            if d not in by_id and d not in node_ids:
+                raise ValueError(f"operation {n[1]!r} is after unknown id {d!r}")
+            deps |= set(by_id.get(d, [d]))
+        n[2] = deps
+    paths = order_paths(nodes, job.get("tool_order") == "minimize_changes")
     rotary = job.get("rotary")
     if rotary:
         safe = defaults.get("safe_z", 5.0)
         paths = [ops.wrap(tp, rotary["diameter"], safe) for tp in paths]
-    if job.get("tool_order") == "minimize_changes":
-        paths = group_by_tool(paths)
     return paths
 
 
-def group_by_tool(paths):
-    """Stable regroup so each tool is loaded once, in order of first use.
-
-    Only safe when operations with different tools don't depend on each
-    other's order (e.g. a clearing pass that must precede a V-carve), so it is
-    opt-in via "tool_order": "minimize_changes".
-    """
-    order = []
-    for tp in paths:
-        if tp.tool not in order:
-            order.append(tp.tool)
-    return [tp for t in order for tp in paths if tp.tool == t]
+def order_paths(nodes, minimize_changes: bool):
+    """Cutting order: as written, except that a pass waits for everything it is
+    "after". With minimize_changes, stay on the current tool while any pass
+    for it is ready (greedy; never breaks a dependency)."""
+    remaining, done, out, current = list(nodes), set(), [], None
+    while remaining:
+        ready = [n for n in remaining if n[2] <= done]
+        if not ready:
+            raise ValueError("operations depend on each other in a cycle: "
+                             + ", ".join(sorted(n[1] for n in remaining)))
+        same = [n for n in ready if n[0].tool == current] if minimize_changes else []
+        pick = (same or ready)[0]
+        remaining.remove(pick)
+        done.add(pick[1])
+        out.append(pick[0])
+        current = pick[0].tool
+    return out
 
 
 def load_job(path: str | Path) -> tuple[dict, Path]:

@@ -43,7 +43,8 @@ Pipeline: JSON job → `job.run_job` → list of `Toolpath` (IR) → `post.get_p
 - Climb = wall on the right of travel (M3 spindle): `rings(..., wall_outside=True)` for pockets, inside profiles and V-carve.
 - Offsets and circles go through `ops/common.offset()` / `quad_segs()` so chords stay within 0.005 mm of the true arc; coarser geometry won't be refit to arcs.
 - Machine conventions: rotary A turns around X; Z0 on the rotary centreline for rotary jobs; Z0 at the stock top for flat jobs.
-- Tools come from `examples/tools.json`-style libraries; `number` is the ATC pocket and the LinuxCNC tool number. `center_cutting` (default false) gates every straight plunge.
+- Tools come from `examples/tools.json`-style libraries; `number` is the ATC pocket and the LinuxCNC tool number. Per-material feeds live under a tool's `"cutting"` (stripped by `Tool.from_dict`, merged in `job.run_job` by op signature). Ordering is `job.order_paths` (dependencies via `"id"`/`"after"`).
+- ATC (PrintNC: Benchworks, 6 pockets, M6 remap measures length): camcore emits only `Tn M6` + `G43 Hn`. verify enforces `atc_pockets`, `probe_tool` (never with spindle on) and the real `tool_table` from the machine JSON. `center_cutting` (default false) gates every straight plunge.
 - Ops never plunge into material unless `entry="plunge"` and the tool is centre-cutting: entries live in `camcore/ops/entry.py` (ramp along the contour, helix for pockets). Profiles are built in `camcore/ops/contour.py`: distance-along-contour parametrisation where depth = max(base ramp/level, tab profile), emitted exactly at kinks and crossings (no sampling). verify enforces the same rule independently.
 - Every new op needs: a unit test on geometry (depths, offsets), a run through `camcore.verify.run` with zero errors, and an example job.
 - Never weaken a verify check to make a test pass. If a check is wrong, fix the check and add a test that shows why.

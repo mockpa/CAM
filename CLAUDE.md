@@ -12,7 +12,8 @@ The full roadmap is in `docs/PLAN.md`. The step-by-step build plan is in `docs/I
 - Install: `python3 -m venv .venv && . .venv/bin/activate && pip install -e .[dev]`
 - Tests: `pytest -q` (must stay green; add tests with every feature)
 - Single test: `pytest -q tests/test_ops.py::test_wrap_maps_y_to_a_and_depth_to_radius`
-- Generate G-code: `camcore examples/sign_job.json -o out/sign.ngc --preview out/sign.svg` (`--post grbl` overrides the job's post)
+- Gate a job (generate + verify + LinuxCNC sim + viewer; `.ngc` written only if all pass): `camcore check examples/sign_job.json` (`--no-sim` for quick iterations, `-o DIR` output folder)
+- Generate G-code only: `camcore examples/sign_job.json -o out/sign.ngc --preview out/sign.svg` (`--post grbl` overrides the job's post)
 - Dry run + 3D viewer: `camcore-verify out/sign.ngc --machine examples/machine.json --tools examples/tools.json --view out/sign_view.html`
 - Rotary dry run: add `--stock examples/stock_cylinder.json`
 - Tool table for the sim: `python -m camcore.tooltable examples/tools.json sim/config/tool.tbl`
@@ -22,7 +23,7 @@ The full roadmap is in `docs/PLAN.md`. The step-by-step build plan is in `docs/I
 `out/` is gitignored scratch output. `examples/*.ngc` are committed fixtures: `tests/test_verify.py::test_examples_verify_clean` replays them. After any post or op change that alters output, regenerate `examples/sign.ngc` and `examples/wrap.ngc` from their job files and confirm they still verify clean.
 
 ## Architecture (keep these boundaries)
-Pipeline: JSON job → `job.run_job` → list of `Toolpath` (IR) → `post.get_post(name).emit(paths)` → G-code → `verify.run` (independent replay).
+Pipeline: JSON job → `job.run_job` → list of `Toolpath` (IR) → `post.get_post(name).emit(paths)` → G-code → `verify.run` (independent replay) → LinuxCNC sim. `camcore/check.py` (`camcore check`, dispatched from `cli.py`) runs the whole chain and is the only path that should produce programs for the machine.
 
 - `camcore/job.py`: builds named shapes (rect/circle/polygon/svg/union/difference), merges `defaults` into each operation, and dispatches by name with `getattr(ops, spec["op"])(shape, tool, **params)`. A new op must be exported from `ops/__init__.py`, and its keyword args are the job-file keys. Special cases live here: `drill` takes `points` instead of a shape; a `vcarve` with `clear_tool` adds a pocket pass first. `rotary` wrapping is applied to every path after all ops are built, and the optional `"tool_order": "minimize_changes"` regroup runs last.
 - `camcore/ops/*`: geometry + tool + params in, `Toolpath` IR out. Ops never write G-code.
@@ -31,7 +32,7 @@ Pipeline: JSON job → `job.run_job` → list of `Toolpath` (IR) → `post.get_p
 - `camcore/ops/rotary.py`: wrap = Y becomes A (deg = Y / r), Z0 is on the rotary centreline, so cutting Z = radius + depth.
 - `camcore/verify.py`: independent G-code replay with machine + stock model (heightmap for box stock, radius map over (X, A) for cylinder stock). It parses G-code text and must never import ops or posts, so it stays an independent check of their output. `verify_cli.py` is its CLI.
 - `camcore/viewer.py` + `viewer_template.html`: self-contained HTML player (vendored three.js r128 in `camcore/vendor/`, shipped as package data).
-- `sim/`: Docker image with Debian trixie's `linuxcnc-uspace` (2.9.4, non-setuid `rtapi_app`), XYZA sim config in `sim/config/`, headless `run_check.py`. `entrypoint.sh` picks up `/work/tool.tbl` and `/work/machine.ini` if they are mounted.
+- `sim/`: Docker image with Debian trixie's `linuxcnc-uspace` (2.9.4, non-setuid `rtapi_app`), XYZA sim config in `sim/config/`, headless `run_check.py`. `entrypoint.sh` picks up `/work/tool.tbl`, `/work/machine.ini` and `/work/machine.var` (G54) if they are mounted.
 
 - `machine/`: provisional profile of the target machine (PrintNC V4 Metalcutter, still being built): verify JSON plus a matching sim INI and G54 `.var`. Keep the three in sync; `examples/machine.json` stays the small fixture the tests use. See `machine/README.md`.
 
@@ -41,7 +42,8 @@ Pipeline: JSON job → `job.run_job` → list of `Toolpath` (IR) → `post.get_p
 - Tools come from `examples/tools.json`-style libraries; `number` is the ATC pocket and the LinuxCNC tool number.
 - Every new op needs: a unit test on geometry (depths, offsets), a run through `camcore.verify.run` with zero errors, and an example job.
 - Never weaken a verify check to make a test pass. If a check is wrong, fix the check and add a test that shows why.
-- Generated G-code must run in the LinuxCNC sim (`sim/`) before it is called done.
+- Generated G-code must pass `camcore check` (with the sim) before it is called done.
+- Jobs must carry a `"stock"`; `camcore check` refuses jobs without one.
 
 ## Safety
 This software drives a real machine. Any change to posts, rotary math or verify needs a test that pins the exact G-code or numbers it produces.

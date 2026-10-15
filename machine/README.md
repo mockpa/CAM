@@ -15,9 +15,9 @@ from the build plan, not from a running machine:
 |---|---|
 | `printnc_provisional.json` | `camcore-verify --machine` |
 | `printnc_sim.ini` | sim, mounted as `/work/machine.ini` |
-| `printnc_sim.var` | sim G54 offset, mounted as `/work/machine.var` (must match `work_offset` in the JSON) |
+| `printnc_sim.var` | sim G54 offset for manual sim runs, mounted as `/work/machine.var`. `camcore check` generates it from `work_offset`; a test keeps the file in sync. |
 
-Sim check against this profile (from the repo root, with the program in `out/`):
+`camcore check` uses this profile by default. Manual sim run against it (from the repo root, with the program in `out/`):
 
 ```bash
 cp machine/printnc_sim.ini out/machine.ini && cp machine/printnc_sim.var out/machine.var

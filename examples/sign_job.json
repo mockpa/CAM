@@ -1,6 +1,7 @@
 {
   "post": "linuxcnc",
   "tool_library": "tools.json",
+  "stock": {"type": "box", "x": [0, 160], "y": [0, 90], "z": [-18, 0]},
   "defaults": {
     "safe_z": 5.0
   },

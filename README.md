@@ -16,6 +16,24 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
 - **Animated 3D viewer** (`--view`): one HTML file that plays the program with live material removal, A-axis rotation, tool changes and the check results. Works offline.
 - **LinuxCNC simulator container** (`sim/`): runs the program through real LinuxCNC on a simulated XYZA machine with tool changer. Not yet tested, see `sim/README.md`.
 
+## Check a job (the only way to get a program for the machine)
+```bash
+camcore check examples/sign_job.json            # writes out/sign.ngc, out/sign_view.html, out/sign_report.txt
+camcore check examples/sign_job.json --no-sim   # quick iteration, skips the LinuxCNC sim
+```
+`camcore check` generates the G-code, dry-runs it with `camcore-verify` against the machine JSON and the job's
+`"stock"`, runs it through LinuxCNC in the sim container (`sim/`, build the image once), writes the viewer, and only
+then writes the `.ngc`. If anything fails, the output folder gets only `NAME_report.txt`, and an older `NAME.ngc` /
+viewer from a previous run is deleted. Only take programs from the output folder of `camcore check`.
+
+- Machine: `--machine`, else the job's `"machine"` key (relative to the job file), else
+  `machine/printnc_provisional.json`. The machine JSON's `"sim": {"ini": ...}` names the sim INI; the sim's G54
+  offset and tool table are generated from the machine JSON and the job's tool library.
+- Jobs need a `"stock"`: `{"type": "box", "x": [..], "y": [..], "z": [..]}` or
+  `{"type": "cylinder", "diameter": D, "x": [..]}`.
+- `-o DIR` sets the output folder (default `out`), `--sim-image` the Docker image (default `camcore-sim`).
+- Exit code 0 only if everything passed. Without the sim the report says `PASSED WITHOUT SIM`.
+
 ## Run it
 ```bash
 pip install -e .[dev]

@@ -6,5 +6,6 @@
   "rapid_rate": 17000,
   "a_max_diameter": 150,
   "probe_tool": 99,
+  "sim": {"ini": "printnc_sim.ini"},
   "stock": {"type": "box", "x": [0, 160], "y": [0, 90], "z": [-18, 0]}
 }

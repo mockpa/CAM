@@ -266,9 +266,9 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
     return issues, motions, stock
 
 
-def machine_from_library(machine: Machine, library_path) -> Machine:
-    """Fill the machine's tool table from a camcore tool library."""
-    lib = json.loads(Path(library_path).read_text())
+def machine_from_library(machine: Machine, library) -> Machine:
+    """Fill the machine's tool table from a camcore tool library (path or dict)."""
+    lib = library if isinstance(library, dict) else json.loads(Path(library).read_text())
     for name, t in lib.items():
         if "number" in t:
             machine.tools.setdefault(int(t["number"]), {**t, "name": name})

@@ -1,6 +1,7 @@
 {
   "post": "linuxcnc",
   "tool_library": "tools.json",
+  "stock": {"type": "cylinder", "diameter": 40, "x": [0, 120]},
   "rotary": {"diameter": 40},
   "defaults": {"safe_z": 5.0},
   "shapes": {

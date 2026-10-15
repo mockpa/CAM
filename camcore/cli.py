@@ -1,4 +1,4 @@
-"""Command line: camcore JOB.json [-o out.nc]"""
+"""Command line: camcore JOB.json [-o out.nc], or camcore check JOB.json (see check.py)"""
 from __future__ import annotations
 
 import argparse
@@ -10,6 +10,10 @@ from .post import get_post
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["check"]:
+        from .check import main as check_main
+        sys.exit(check_main(argv[1:]))
     ap = argparse.ArgumentParser(prog="camcore", description="Generate G-code from a JSON job")
     ap.add_argument("job")
     ap.add_argument("-o", "--output", help="output file (default: stdout)")

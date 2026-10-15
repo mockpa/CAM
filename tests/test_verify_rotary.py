@@ -17,10 +17,11 @@ def machine():
                    work_offset={"x": 0, "y": 0, "z": 0}, has_a=True, tools=TOOLS)
 
 
-def inside(tool, dx, phi, z, rho):
-    """Brute-force body membership of the ray points at distances rho (array)."""
+def inside(tool, dx, phi, z, rho, y=0.0):
+    """Brute-force body membership of the ray points at distances rho (array); the ray
+    runs through (Y, Z) = rho * (-sin phi, cos phi), the tool axis stands at Y = y."""
     r = tool["diameter"] / 2
-    lat, hgt = rho * abs(math.sin(phi)), rho * math.cos(phi)
+    lat, hgt = -rho * math.sin(phi) - y, rho * math.cos(phi)
     d = np.hypot(dx, lat)
     if tool["kind"] == "ball":
         prof = r - np.sqrt(np.clip(r * r - d * d, 0, None))
@@ -31,23 +32,28 @@ def inside(tool, dx, phi, z, rho):
     return (d <= r) & (hgt >= z + prof)
 
 
+@pytest.mark.parametrize("y", [0.0, 2.0, -7.5, 25.0])
 @pytest.mark.parametrize("t", [1, 2, 3])
-def test_ray_interval_matches_brute_force(t):
+def test_ray_interval_matches_brute_force(t, y):
+    # y != 0: the tool stands beside the axis (indexed work on a face)
     tool = TOOLS[t]
     rng = np.random.default_rng(t)
     dx = rng.uniform(-3.2, 3.2, 300)
     phi = rng.uniform(-math.pi / 2, math.pi / 2, 300)
     phi[:20] = 0.0
-    rhos = np.linspace(0, 60, 60001)
+    if y:                                   # aim most rays at the tool so they hit it
+        phi[20:200] = -np.arctan2(y + rng.uniform(-3.5, 3.5, 180), rng.uniform(2, 14, 180))
+    rhos = np.linspace(0, 150, 150001)
     for z in (2.0, 12.5):
-        lo, hi = Stock._ray_interval(dx, phi, z, tool)
+        lo, hi = Stock._ray_interval(dx, phi, z, tool, y)
+        hi = np.minimum(hi, 150)            # compare within the sampled range (the shank is endless)
         for k in range(len(dx)):
-            ins = rhos[inside(tool, dx[k], phi[k], z, rhos)]
+            ins = rhos[inside(tool, dx[k], phi[k], z, rhos, y)]
             if not len(ins):
                 assert not lo[k] <= hi[k] or hi[k] - lo[k] < 2e-3, (k, lo[k], hi[k])
                 continue
             assert abs(lo[k] - ins[0]) < 2e-3
-            assert hi[k] >= 60 - 2e-3 if ins[-1] == 60 else abs(hi[k] - ins[-1]) < 2e-3
+            assert hi[k] >= 150 - 2e-3 if ins[-1] == 150 else abs(hi[k] - ins[-1]) < 2e-3
 
 
 def test_ring_cut_leaves_exact_radius_and_rapids_see_it():

@@ -5,7 +5,9 @@ order of first use. LinuxCNC applies the tool length offset with G43.
 
 Runs of feed moves are written as G2/G3 arcs where an arc fits them within
 `arc_tolerance` (see camcore/arcfit.py); arcs=False keeps everything as G1.
-Rotary (A-axis) toolpaths always stay linear, in G93 inverse time.
+Rotary (A-axis) toolpaths that cut while A turns stay linear, in G93 inverse
+time. Indexed toolpaths (A only turns in rapids that move nothing else) are
+ordinary 3-axis work in G94 with arcs, and their A positions are always written.
 """
 from __future__ import annotations
 
@@ -68,8 +70,14 @@ class LinuxCncPost(PostProcessor):
             self.tool_number(t)
         return super().emit(paths)
 
+    @staticmethod
+    def indexed(tp: Toolpath) -> bool:
+        """A turns only in rapids that move no other axis (indexed 3+1)."""
+        return all(m.a is None or (m.kind == "rapid" and m.x is None and m.y is None and m.z is None)
+                   for m in tp.moves)
+
     def moves(self, tp: Toolpath) -> list[str]:
-        if tp.uses_a_axis():
+        if tp.uses_a_axis() and not self.indexed(tp):
             return ["G93 (inverse-time feed for rotary moves)"] + self._inverse_time_moves(tp) + ["G94"]
         if not self.arcs:
             return super().moves(tp)
@@ -105,6 +113,8 @@ class LinuxCncPost(PostProcessor):
             if m.kind == "rapid" or None in pos.values():
                 target = {a: getattr(m, a) for a in "xyz"}
                 ws = words(target)
+                if m.a is not None:             # an index turn: always written, it is the face
+                    ws.append(f"A{self.fmt(m.a)}")
                 pos.update({a: v for a, v in target.items() if v is not None})
                 if ws:
                     out.append(("G0 " if m.kind == "rapid" else "G1 ") + " ".join(ws)

@@ -133,7 +133,7 @@ __THREE_SCRIPT__
 const D = JSON.parse(document.getElementById("data").textContent);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const $ = id => document.getElementById(id);
-const rotary = D.stock && D.stock.type === "cylinder";
+const rotary = D.stock && (D.stock.type === "cylinder" || D.stock.type === "bar");
 
 // ---------- moves: [kind, x, y, z, a, tool, line, seconds, spindle] -------------
 const M = D.moves, N = M.length;
@@ -169,8 +169,8 @@ const col = n => new THREE.Color(css(n));
 // path: one LineSegments per kind, revealed with drawRange as the program plays
 function pathPoint(p) {
   if (!rotary) return [p[0], p[1], p[2]];
-  const a = p[3] * Math.PI / 180;           // point on the stock at angle a and radius z
-  return [p[0], -p[2] * Math.sin(a), p[2] * Math.cos(a)];
+  const a = p[3] * Math.PI / 180;           // machine (y, z) at A = a, in the part's frame
+  return [p[0], p[1] * Math.cos(a) - p[2] * Math.sin(a), p[1] * Math.sin(a) + p[2] * Math.cos(a)];
 }
 function buildPath(kind) {
   const pos = [], idx = [];
@@ -209,14 +209,20 @@ if (S) {
   let nx, ny, x0, y0, res, base;
   if (rotary) {
     x0 = S.x[0]; res = Math.max(0.4, (S.x[1] - S.x[0]) / 320);
-    nx = Math.ceil((S.x[1] - x0) / res) + 1; base = S.diameter / 2;
-    ny = Math.max(90, Math.min(720, Math.ceil(Math.PI * S.diameter / res)));
+    nx = Math.ceil((S.x[1] - x0) / res) + 1;
+    base = S.type === "bar" ? Math.max(...S.y.map(y => Math.max(...S.z.map(z => Math.hypot(y, z))))) : S.diameter / 2;
+    ny = Math.max(90, Math.min(720, Math.ceil(2 * Math.PI * base / res)));
   } else {
     x0 = S.x[0]; y0 = S.y[0];
     res = Math.max(0.25, Math.max(S.x[1] - S.x[0], S.y[1] - S.y[0]) / 360);
     nx = Math.ceil((S.x[1] - x0) / res) + 1; ny = Math.ceil((S.y[1] - y0) / res) + 1; base = S.z[1];
   }
-  grid = { nx, ny, x0, y0, res, base, h: new Float32Array(nx * ny).fill(base), dirty: false };
+  const h0 = new Float32Array(nx * ny).fill(base);    // uncut stock: per ray for a bar
+  if (rotary && S.type === "bar") for (let j = 0; j < ny; j++) {
+    const psi = j / ny * 2 * Math.PI, d = barRadius(S, -Math.sin(psi), Math.cos(psi));
+    for (let i = 0; i < nx; i++) h0[i * ny + j] = d;
+  }
+  grid = { nx, ny, x0, y0, res, base, h0, h: h0.slice(), dirty: false };
   const g = new THREE.BufferGeometry();
   const pos = new Float32Array(nx * ny * 3), colr = new Float32Array(nx * ny * 3), index = [];
   for (let i = 0; i < nx - 1; i++) for (let j = 0; j < ny - 1 + (rotary ? 1 : 0); j++) {
@@ -246,7 +252,7 @@ function refreshStock() {
     const k = i * ny + j, v = h[k], o = k * 3;
     if (rotary) { const a = j / ny * 2 * Math.PI; pos[o] = x0 + i * res; pos[o + 1] = -v * Math.sin(a); pos[o + 2] = v * Math.cos(a); }
     else { pos[o] = x0 + i * res; pos[o + 1] = y0 + j * res; pos[o + 2] = v; }
-    const t = Math.min(1, (base - v) / span), f = t > 0 ? 0.25 + 0.75 * t : 0;
+    const t = Math.min(1, (grid.h0[k] - v) / span), f = t > 0 ? 0.25 + 0.75 * t : 0;
     c[o] = top.r + (deep.r - top.r) * f; c[o + 1] = top.g + (deep.g - top.g) * f; c[o + 2] = top.b + (deep.b - top.b) * f;
   }
   stockMesh.geometry.attributes.position.needsUpdate = true;
@@ -261,26 +267,42 @@ function profile(d, tl) {
   if (tl.kind === "ball") return r - Math.sqrt(Math.max(0, r * r - d * d));
   return 0;
 }
-function rayInterval(dx, phi, z, tl) {   // [lo, hi] of the ray from the axis inside the tool body, or null
-  const r = tl.diameter / 2, c = Math.cos(phi), s = Math.abs(Math.sin(phi)), rr2 = r * r - dx * dx;
-  if (rr2 < 0 || c <= 1e-12) return null;
-  const fp = s > 1e-12 ? Math.sqrt(rr2) / s : Infinity;
-  const g = rho => rho * c - profile(Math.hypot(dx, rho * s), tl);
-  let roots;
-  if (tl.kind === "vbit") {
-    const kv = 1 / Math.tan((tl.v_angle || 90) * Math.PI / 360);
-    const qa = c * c - kv * kv * s * s, qb = -2 * z * c, qc = z * z - kv * kv * dx * dx, disc = qb * qb - 4 * qa * qc;
-    roots = Math.abs(qa) < 1e-12 ? (qb ? [-qc / qb] : []) : disc < 0 ? [] : [(-qb - Math.sqrt(disc)) / (2 * qa), (-qb + Math.sqrt(disc)) / (2 * qa)];
-  } else if (tl.kind === "ball") {
-    const w = z + r, disc = rr2 - w * w * s * s;
-    roots = disc < 0 ? [] : [w * c - Math.sqrt(disc), w * c + Math.sqrt(disc)];
-  } else roots = [z / c];
-  const tol = 1e-6 * (1 + Math.abs(z));
-  let lo = Infinity, hi = -Infinity;
-  for (const q of roots) if (q >= -tol && q <= fp + tol && Math.abs(g(Math.max(q, 0)) - z) <= tol) { lo = Math.min(lo, q); hi = Math.max(hi, q); }
-  if (g(0) >= z) { lo = 0; hi = Math.max(hi, 0); }
-  if (fp === Infinity || g(fp) >= z) { hi = fp; lo = Math.min(lo, fp); }
-  return lo <= hi ? [Math.max(0, lo), hi] : null;
+function barRadius(S, uy, uz) {     // distance from the axis to the bar's edge along (uy, uz)
+  const ty = uy > 1e-12 ? S.y[1] / uy : uy < -1e-12 ? S.y[0] / uy : Infinity;
+  const tz = uz > 1e-12 ? S.z[1] / uz : uz < -1e-12 ? S.z[0] / uz : Infinity;
+  return Math.min(ty, tz);
+}
+// [lo, hi] of the ray from the axis inside the tool body, or null. The ray runs through
+// (Y, Z) = rho * (-sin phi, cos phi); the tool axis stands at Y = y with its tip at Z = z.
+// JS port of camcore.verify.Stock._ray_interval: keep the two identical.
+function rayInterval(dx, phi, z, tl, y) {
+  const r = tl.diameter / 2, sg = -Math.sin(phi), c = Math.cos(phi), w2 = r * r - dx * dx, eps = 1e-12;
+  if (w2 < 0 || c <= eps) return null;
+  const w = Math.sqrt(w2);
+  const lin = (a, b) => a > eps ? [b / a, Infinity] : a < -eps ? [-Infinity, b / a] : b <= 0 ? [-Infinity, Infinity] : [Infinity, -Infinity];
+  const meet = (...iv) => [Math.max(...iv.map(v => v[0])), Math.min(...iv.map(v => v[1]))];
+  const hull = (...iv) => { const ok = iv.filter(v => v[0] <= v[1]);
+    return ok.length ? [Math.min(...ok.map(v => v[0])), Math.max(...ok.map(v => v[1]))] : [Infinity, -Infinity]; };
+  const base = meet(lin(sg, y - w), lin(-sg, -(y + w)), [0, Infinity]);
+  let iv;
+  if (tl.kind === "ball") {
+    const b = sg * y + c * (z + r), disc = b * b - (y * y + (z + r) * (z + r) - w2);
+    const disk = disc >= 0 ? [b - Math.sqrt(disc), b + Math.sqrt(disc)] : [Infinity, -Infinity];
+    iv = hull(meet(base, lin(c, z + r)), meet(disk, base));
+  } else if (tl.kind === "vbit") {
+    const kv = 1 / Math.tan((tl.v_angle || 90) * Math.PI / 360), above = meet(base, lin(c, z));
+    const qa = c * c - kv * kv * sg * sg, qb = -2 * z * c + 2 * kv * kv * sg * y, qc = z * z - kv * kv * (dx * dx + y * y);
+    const disc = qb * qb - 4 * qa * qc, sq = Math.sqrt(Math.max(0, disc));
+    let pieces;
+    if (Math.abs(qa) <= eps) pieces = [lin(qb, -qc)];
+    else {
+      const ra = (-qb - sq) / (2 * qa), rb = (-qb + sq) / (2 * qa), r1 = Math.min(ra, rb), r2 = Math.max(ra, rb);
+      if (qa > 0) pieces = disc >= 0 ? [[-Infinity, r1], [r2, Infinity]] : [[-Infinity, Infinity]];
+      else pieces = disc >= 0 ? [[r1, r2]] : [];
+    }
+    iv = hull(...pieces.map(p => meet(above, p)));
+  } else iv = meet(base, lin(c, z));
+  return iv[0] <= iv[1] ? [Math.max(0, iv[0]), iv[1]] : null;
 }
 function stamp(p, tl) {     // remove material under the tool at p = [x, y, z, a]
   const { nx, ny, x0, y0, res, h } = grid, r = tl.diameter / 2;
@@ -289,13 +311,14 @@ function stamp(p, tl) {     // remove material under the tool at p = [x, y, z, a
   if (rotary) {
     // each cell is material from the axis out to h along its ray; a ray whose outer end
     // lies in the tool body is cut back to where it enters (same model as camcore-verify)
-    const ares = 360 / ny, spanDeg = p[2] > 0 ? Math.atan2(r, p[2]) * 180 / Math.PI : 90;
-    const span = Math.ceil(spanDeg / ares) + 1;
-    const jc = Math.round((((p[3] % 360) + 360) % 360) / ares);
+    const ares = 360 / ny, d = 180 / Math.PI;
+    const lo = p[2] > 0 ? -Math.atan2(p[1] + r, p[2]) * d : -90, hi = p[2] > 0 ? -Math.atan2(p[1] - r, p[2]) * d : 90;
+    const span = Math.ceil((hi - lo) / 2 / ares) + 1;
+    const jc = Math.round(((((p[3] + (lo + hi) / 2) % 360) + 360) % 360) / ares);
     for (let i = i0; i <= i1; i++) for (let dj = -span; dj <= span; dj++) {
       const j = ((jc + dj) % ny + ny) % ny, dx = x0 + i * res - p[0], k = i * ny + j;
       let da = (j * ares - p[3]) % 360; da = ((da + 540) % 360) - 180;
-      const iv = rayInterval(dx, da * Math.PI / 180, p[2], tl);
+      const iv = rayInterval(dx, da * Math.PI / 180, p[2], tl, p[1]);
       if (iv && iv[0] < h[k] && iv[1] >= h[k] - 1e-9) { h[k] = Math.max(0, iv[0]); grid.dirty = true; }
     }
   } else {
@@ -364,7 +387,7 @@ function moveAt(t) {     // index of move containing time t
   while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid + 1] <= t) lo = mid + 1; else hi = mid; }
   return lo;
 }
-function resetStock() { if (grid) { grid.h.fill(grid.base); grid.dirty = true; } applied = 0; appliedT = 0; }
+function resetStock() { if (grid) { grid.h.set(grid.h0); grid.dirty = true; } applied = 0; appliedT = 0; }
 function advanceCut(i, t) {
   if (i < applied || (i === applied && t < appliedT)) resetStock();
   while (applied < i) { cutSegment(applied, appliedT, 1); applied++; appliedT = 0; }
@@ -380,7 +403,7 @@ function update() {
   if (grid && grid.dirty) refreshStock();
   reveal(feedLine, i + (f > 0 ? 1 : 0)); reveal(rapidLine, i + (f > 0 ? 1 : 0));
   if (toolGroup.userData.tool !== m[5]) buildTool(m[5]);
-  if (rotary) { toolGroup.position.set(p[0], 0, p[2]); stockGroup.rotation.x = -p[3] * Math.PI / 180; }
+  if (rotary) { toolGroup.position.set(p[0], p[1], p[2]); stockGroup.rotation.x = -p[3] * Math.PI / 180; }
   else toolGroup.position.set(p[0], p[1], p[2]);
   $("dx").textContent = p[0].toFixed(3); $("dy").textContent = p[1].toFixed(3);
   $("dz").textContent = p[2].toFixed(3); $("da").textContent = p[3].toFixed(3);

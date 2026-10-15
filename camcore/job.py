@@ -11,6 +11,7 @@ from shapely.ops import unary_union
 
 from . import ops
 from .ops.common import quad_segs
+from .ops.rotary import index_angles, stock_reach, stock_top
 from .post import job_post
 from .svg import load_svg
 from .tools import Tool, load_library
@@ -91,6 +92,9 @@ def run_job(job: dict, base_dir: Path = Path(".")):
     native = set()                           # ids of toolpaths that already carry A (not wrapped)
     defaults = job.get("defaults", {})
     material = job.get("material")
+    if "index" in job and job.get("rotary"):
+        raise ValueError("a job-level \"index\" and \"rotary\" wrapping together are ambiguous: "
+                         "put \"index\" on the operations that run indexed")
 
     def params(fn, tool_name, own):
         """Merged parameters for op function fn using tool_name; own = the op's own keys."""
@@ -115,6 +119,12 @@ def run_job(job: dict, base_dir: Path = Path(".")):
         if op_id in by_id:
             raise ValueError(f"duplicate operation id {op_id!r}")
         tool_name = spec_own.pop("tool")
+        index_spec = spec_own.pop("index", None if "model" in spec_own else job.get("index"))
+        face_z = spec_own.pop("face_z", None)
+        if "model" in spec_own and index_spec is not None:
+            raise ValueError(f"operation {op_id!r}: rotary model ops turn A themselves and cannot be indexed")
+        if face_z is not None and index_spec is None:
+            raise ValueError(f"operation {op_id!r}: face_z only applies to indexed operations")
         fn = getattr(ops, kind)
         spec = params(fn, tool_name, spec_own)
         tool = tools[tool_name]
@@ -151,6 +161,13 @@ def run_job(job: dict, base_dir: Path = Path(".")):
             tp = fn(shape, tool, **spec)
         tp.spindle_rpm = rpm
         mine.append([tp, op_id, set(after) | {n[1] for n in mine}])   # the V-bit pass waits for its clearing
+        if index_spec is not None:
+            mine = index_nodes(mine, index_angles(index_spec), job.get("stock"), face_z,
+                               job.get("index_clearance", 5.0))
+            native.update(id(n[0]) for n in mine)
+        else:
+            for n in mine:
+                n.append(None)                  # 4th entry: the A an indexed pass runs at
         by_id[op_id] = [n[1] for n in mine]
         nodes += mine
     node_ids = {n[1] for n in nodes}
@@ -170,22 +187,49 @@ def run_job(job: dict, base_dir: Path = Path(".")):
     return continue_a(paths, native)
 
 
+def index_nodes(passes, angles, stock, face_z, clearance):
+    """Indexed 3+1: each pass of an op once per A angle, angle by angle. Within one
+    angle the passes keep their dependencies (a V-bit pass waits for the clearing
+    of the same face). Nodes gain a 4th entry, the A they run at."""
+    if not stock or stock.get("type") not in ("cylinder", "bar"):
+        raise ValueError("indexed operations need a cylinder or bar stock (Y0 and Z0 on the rotary axis)")
+    if stock["type"] == "bar" and not all(lo < 0 < hi for lo, hi in (stock["y"], stock["z"])):
+        raise ValueError("bar stock must enclose the rotary axis (its y and z ranges must contain 0)")
+    if clearance <= 0:
+        raise ValueError("index_clearance must be > 0")
+    local = {n[1] for n in passes}
+    out = []
+    for a in angles:
+        top = stock_top(stock, a) if face_z is None else face_z
+        tag = lambda nid: f"{nid}@A{a:g}"
+        for tp, nid, deps in passes:
+            highest = max((m.z for m in tp.moves if m.z is not None), default=0.0) + top
+            clear = max(stock_reach(stock) + clearance, highest)
+            out.append([ops.index(tp, a, top, clear), tag(nid),
+                        {tag(d) if d in local else d for d in deps}, a])
+    return out
+
+
 def order_paths(nodes, minimize_changes: bool):
     """Cutting order: as written, except that a pass waits for everything it is
     "after". With minimize_changes, stay on the current tool while any pass
-    for it is ready (greedy; never breaks a dependency)."""
-    remaining, done, out, current = list(nodes), set(), [], None
+    for it is ready, and then on the current index angle (greedy; never breaks
+    a dependency)."""
+    remaining, done, out, current, current_a = list(nodes), set(), [], None, None
     while remaining:
         ready = [n for n in remaining if n[2] <= done]
         if not ready:
             raise ValueError("operations depend on each other in a cycle: "
                              + ", ".join(sorted(n[1] for n in remaining)))
-        same = [n for n in ready if n[0].tool == current] if minimize_changes else []
-        pick = (same or ready)[0]
+        pool = ready
+        if minimize_changes:
+            pool = [n for n in ready if n[0].tool == current] or ready
+            pool = [n for n in pool if current_a is not None and len(n) > 3 and n[3] == current_a] or pool
+        pick = pool[0]
         remaining.remove(pick)
         done.add(pick[1])
         out.append(pick[0])
-        current = pick[0].tool
+        current, current_a = pick[0].tool, (pick[3] if len(pick) > 3 else None)
     return out
 
 

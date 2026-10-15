@@ -1,0 +1,20 @@
+{
+  "post": "linuxcnc",
+  "tool_library": "tools.json",
+  "material": "hardwood",
+  "stock": {"type": "bar", "x": [0, 120], "y": [-20, 20], "z": [-20, 20]},
+  "index": {"sides": 4},
+  "tool_order": "minimize_changes",
+  "defaults": {"safe_z": 5.0},
+  "shapes": {
+    "slot": {"type": "rect", "x": 15, "y": -6, "w": 40, "h": 12},
+    "art": {"type": "svg", "file": "sign.svg", "scale": 0.3, "fit_origin": [66, -9]}
+  },
+  "operations": [
+    {"id": "slots", "op": "pocket", "shape": "slot", "tool": "em3", "depth": 3},
+    {"id": "holes", "op": "drill", "tool": "em3", "points": [[100, 0]], "depth": 8, "peck": 2,
+     "index": [90, 270]},
+    {"id": "label", "op": "vcarve", "shape": "art", "tool": "v60", "step": 0.15, "max_depth": 1.5,
+     "index": [0]}
+  ]
+}

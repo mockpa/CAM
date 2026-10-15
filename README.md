@@ -27,6 +27,25 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
   marked `"center_cutting": true` in the library. `camcore-verify` independently reports any feed into material
   steeper than 45 deg with a tool that is not centre-cutting.
 - **Rotary (wrapped)**: `"rotary": {"diameter": 40}` wraps any job around the A axis (Y becomes A, Z0 on the axis centreline), with G93 inverse-time feeds.
+- **Indexed 3+1**: `"index": {"sides": 4}` on the job (or on one operation) turns A to fixed angles and runs
+  any 2.5D or V-carve operation (pocket, profile, drill, V-carve with its clearing pass) on each face. Other forms:
+  `"index": 90`, `"index": [0, 180]`, `{"angles": [...]}`, `{"sides": 6, "start": 30}`; an operation's own
+  `"index"` overrides the job's. Needs a rotary stock: `{"type": "cylinder", "diameter": 40, "x": [..]}` or a bar
+  `{"type": "bar", "x": [0, 120], "y": [-20, 20], "z": [-20, 20]}` (its cross-section at A = 0, around the axis).
+  - Each face is drawn as seen from above once A has turned: X along the axis, Y across (Y0 on the axis), Z0 at
+    the top of the face, so `depth`, `top_z` and `safe_z` mean what they do on a flat job. The face top defaults
+    to the stock's highest point at that A (cylinder: its radius; bar: the face, or the edge at 45 deg);
+    `"face_z": 15` sets it.
+  - Before turning A the tool retracts above everything the part can swing through (largest stock radius +
+    `"index_clearance"`, default 5 mm), turns A with nothing else moving, and retracts again after the face.
+    A takes the short way round.
+  - Output stays G94 with G2/G3 arcs; only the `G0 A..` lines are new. With `"tool_order": "minimize_changes"`
+    the order also stays on the current face where it can. A job can mix indexed operations with wrapped ones
+    (`"rotary"`), but then `"index"` goes on the operations, not the job.
+  - Handedness: the face up at A = a is the part's ray (0, -sin a, cos a), as everywhere else in camcore. If
+    your rotary turns the other way, features on side faces come out mirrored: check with an air cut.
+  See `examples/indexed_job.json`: a 40 x 40 bar with a slot on all four faces, holes on two and a V-carved
+  label on top.
 - **Tool library / ATC**: `"tool_library": "tools.json"` with tool numbers (= ATC pocket); the LinuxCNC post emits
   `Tn M6`, `G43 Hn` and stages the next tool. Tool length is measured by the machine's M6 remap, not by camcore.
   The machine JSON can set `"atc_pockets": 6` (other numbers are errors), `"probe_tool": 99` (may be loaded, the
@@ -93,6 +112,9 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
 - **Preview**: top-down SVG of the cuts, shaded by depth.
 - **Virtual dry run** (`camcore-verify`): replays the G-code on a model of your machine and stock and reports crashes (rapids into material, cutting with the spindle stopped), travel-limit violations, unknown tool numbers, missing `G43`, cuts deeper than the flute length and G93 moves without F. G2/G3 arcs (XY plane, helical) are
   replayed through the same checks; arcs whose end radius differs from the start radius are errors. Also estimates machine time.
+  Rotary stock (cylinder or bar) is a map of rays from the axis over (X, A), cut exactly by the tool body
+  wherever the tool stands, also beside the axis (indexed work), so turning A with the tool too low over a
+  bar's edges is reported as a crash.
 - **Animated 3D viewer** (`--view`): one HTML file that plays the program with live material removal, A-axis rotation, tool changes and the check results. Works offline.
 - **LinuxCNC simulator container** (`sim/`): runs the program through real LinuxCNC (2.9.4) on a simulated XYZA machine with tool changer; verified, see `sim/README.md`. `camcore check` runs it for you.
 
@@ -130,7 +152,7 @@ pytest
 camcore/
   tools.py      tool definitions (flat, ball, V-bit) and their profiles
   toolpath.py   Toolpath IR: rapid/feed moves with X Y Z A
-  ops/          profile, pocket, vcarve, drill, wrap, rotary_rough/finish (geometry in, IR out)
+  ops/          profile, pocket, vcarve, drill, wrap, index, rotary_rough/finish (geometry in, IR out)
   post/         IR to G-code; base class, LinuxCNC, GRBL
   svg.py        SVG import
   dxf.py        DXF import
@@ -147,4 +169,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-medial-axis V-carve, indexed 3+1, 3-axis 3D, GUI.
+medial-axis V-carve, 3-axis 3D, GUI.

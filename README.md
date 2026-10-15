@@ -2,6 +2,10 @@
 
 Python core for a CAM application ([the plan](docs/PLAN.md)): 2.5D, V-carve, 3-axis 3D and 4-axis (wrapped, indexed and continuous rotary) toolpaths with LinuxCNC (and GRBL) output.
 
+**New here? Read the [user manual](docs/MANUAL.md)**: a first job start to finish, the desktop app, your own
+drawings, rotary work, the simulator, taking a program to the machine, and a reference of every job key.
+This README is the feature list.
+
 ## What works today
 - **Profile**: inside / outside / on-line, multiple step-downs, climb or conventional. Each contour is cut
   through all depths without retracting.
@@ -18,6 +22,10 @@ Python core for a CAM application ([the plan](docs/PLAN.md)): 2.5D, V-carve, 3-a
   requested tabs gets as many as fit; one whose inside waste is milled away (slug under 1 mm) gets none. Each
   such adjustment is listed as a `note:` by `camcore` and in the `camcore check` report.
 - **Pocket**: contour-parallel clearing with islands, step-downs, stepover as a fraction of tool diameter.
+  `"method": "adaptive"` keeps a constant width of cut (`stepover_ratio` 0.1 to 0.25, `step_down` up to the
+  flute length): the tool steers through a model of the material left, so it never slots or overloads in
+  corners; each region is entered by a helix, then a ramped wall pass finishes the walls. Regions too narrow
+  for a helix fall back to offset loops (with a note). See `examples/adaptive_job.json`.
 - **V-carve**: depth follows the distance to the edge; optional `max_depth` + `clear_tool` for flat-bottom carving (an endmill clears the floor first).
   `"method": "offset"` (default) stacks inset contours every `step`; `"method": "medial"` runs the tip once along the
   medial axis (Voronoi of the boundary) at the depth where the cone touches both walls: sharp corners, a fraction of the
@@ -138,8 +146,14 @@ Python core for a CAM application ([the plan](docs/PLAN.md)): 2.5D, V-carve, 3-a
   Rotary stock (cylinder or bar) is a map of rays from the axis over (X, A), cut exactly by the tool body
   wherever the tool stands, also beside the axis (indexed work), so turning A with the tool too low over a
   bar's edges is reported as a crash.
+- **Machine body check**: the machine JSON's `"body"` (spindle, collet nut, Z plate, gantry beam, ATC rack,
+  tool setter, spoilboard, and on rotary jobs the chuck and headstock) is swept along every move; any contact,
+  and the spindle or gantry meeting the stock, is an error. Tools need `"gauge_length"` (spindle nose to tip).
+  Rotary stock carries `"chuck_hold"`, which places the job at the chuck (its G54). After every tool change
+  the LinuxCNC post moves to the first X Y (A) at the G53 Z0 height before Z comes down, and verify refuses
+  a descent at an unknown position. See `camcore/body.py` and `machine/README.md`.
 - **Animated 3D viewer** (`--view`): one HTML file that plays the program with live material removal, A-axis rotation, tool changes and the check results. Works offline.
-- **LinuxCNC simulator container** (`sim/`): runs the program through real LinuxCNC (2.9.4) on a simulated XYZA machine with tool changer; verified, see `sim/README.md`. `camcore check` runs it for you.
+- **LinuxCNC simulator container** (`sim/`): runs the program through real LinuxCNC (2.9.4) on a simulated XYZA machine with tool changer; verified, see `sim/README.md`. `camcore check` runs it for you. Its GUI mode shows a vismach 3D model of the machine next to AXIS, drawn from the scene `camcore check` writes.
 
 ## Check a job (the only way to get a program for the machine)
 ```bash
@@ -216,6 +230,7 @@ camcore/
   job.py        JSON job format -> toolpaths
   preview.py    SVG preview
   verify.py     virtual dry run: machine + stock model and checks
+  body.py       machine body (spindle, gantry, obstacles, rotary unit) for the collision check and the sim model
   viewer.py     animated 3D viewer (three.js, vendored, MIT)
   tooltable.py  tool library -> LinuxCNC .tbl
   cli.py        command line
@@ -223,4 +238,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-adaptive clearing, rest machining after 3D roughing, a 2D preview of shapes in the app.
+rest machining after 3D roughing, a 2D preview of shapes in the app, the machine body in the HTML viewer.

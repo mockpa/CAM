@@ -3,7 +3,12 @@
 Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and V-carve toolpaths with LinuxCNC (and GRBL) output. 3D and 4-axis come next.
 
 ## What works today
-- **Profile**: inside / outside / on-line, multiple step-downs, climb or conventional.
+- **Profile**: inside / outside / on-line, multiple step-downs, climb or conventional. Each contour is cut
+  through all depths without retracting.
+- **Holding tabs** (profiles): `"tabs": {"count": 4, "width": 6, "height": 1.5}` (or `"spacing"` in mm instead of
+  `"count"`, optional `"ramp_angle"`, default 30 deg). `width` is the tab at the part edge, `height` the material
+  left above the bottom of the cut. Only passes below the tab top are affected: the tool rises over each tab and
+  ramps back down after it, so tabs are trapezoids. See `examples/cutout_job.json`.
 - **Pocket**: contour-parallel clearing with islands, step-downs, stepover as a fraction of tool diameter.
 - **V-carve**: offset-based, depth follows the distance to the edge; optional `max_depth` + `clear_tool` for flat-bottom carving (an endmill clears the floor first).
 - **Drill**: peck drilling (centre-cutting tools only).
@@ -20,7 +25,7 @@ Python core for a CAM application. Phase 0/1 of [the plan](../PLAN.md): 2.5D and
 - **Preview**: top-down SVG of the cuts, shaded by depth.
 - **Virtual dry run** (`camcore-verify`): replays the G-code on a model of your machine and stock and reports crashes (rapids into material, cutting with the spindle stopped), travel-limit violations, unknown tool numbers, missing `G43`, cuts deeper than the flute length and G93 moves without F. Also estimates machine time.
 - **Animated 3D viewer** (`--view`): one HTML file that plays the program with live material removal, A-axis rotation, tool changes and the check results. Works offline.
-- **LinuxCNC simulator container** (`sim/`): runs the program through real LinuxCNC on a simulated XYZA machine with tool changer. Not yet tested, see `sim/README.md`.
+- **LinuxCNC simulator container** (`sim/`): runs the program through real LinuxCNC (2.9.4) on a simulated XYZA machine with tool changer; verified, see `sim/README.md`. `camcore check` runs it for you.
 
 ## Check a job (the only way to get a program for the machine)
 ```bash
@@ -69,4 +74,4 @@ sim/            LinuxCNC simulator container
 ```
 
 ## Not yet
-Arcs (G2/G3) and arc fitting, tabs, lead-in/out, SVG transforms, DXF import, medial-axis V-carve, rotary from STL, indexed 3+1, 3-axis 3D, simulation, GUI.
+Arcs (G2/G3) and arc fitting, lead-in/out, SVG transforms, DXF import, medial-axis V-carve, rotary from STL, indexed 3+1, 3-axis 3D, GUI.

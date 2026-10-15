@@ -184,7 +184,7 @@ def test_wrap_maps_y_to_a_and_depth_to_radius():
     a_vals = [m.a for m in w.moves if m.a is not None]
     assert max(a_vals) == pytest.approx(90.0)         # quarter of circumference -> 90 deg
     cut_z = {round(m.z, 6) for m in w.moves if m.kind == "feed" and m.z is not None}
-    assert cut_z == {9.0}                              # radius 10 minus 1 mm depth
+    assert cut_z == {10.0, 9.0}                        # feed to the surface (r 10), cut at r 10 - 1 mm depth
     g = get_post("linuxcnc").emit([w])
     assert "A90" in g and "G93" in g and g.index("G93") < g.index("A90") < g.rindex("G94\n")
     # 1/4 turn at r=9 mm and 1000 mm/min: 14.137 mm -> F = 1000 / 14.137 = 70.74
@@ -222,7 +222,7 @@ def test_profile_ramp_gcode_is_pinned():
     assert g[g.index("M3 S18000") + 1:g.index("M5 M9")] == [
         "G0 Z5", "G0 X10 Y0", "G0 Z1", "G1 Z0 F200",
         "G1 X5 Z-1 F600", "G1 X0", "G1 Y10", "G1 X10", "G1 Y0", "G1 X5",     # ramp, full loop at -1
-        "G1 X0 Z-2", "G1 Y10", "G1 X10", "G1 Y0", "G1 X5", "G1 X0",          # ramp on, full loop at -2
+        "G1 X0 Z-2", "G1 Y10", "G1 X10", "G1 Y0", "G1 X0",                   # ramp on, full loop at -2
         "G0 Z5"]
 
 
@@ -255,3 +255,59 @@ def test_pocket_helix_stays_inside_and_plunge_needs_permission():
         ops.profile(shape, EM, depth=2, step_down=2, ramp_angle=60)
     plunged = ops.pocket(shape, EM_CC, depth=2, step_down=2, entry="plunge")
     assert any(m.kind == "feed" and m.x is None and m.y is None and m.z == -2 for m in plunged.moves)
+
+
+def test_profile_tabs_are_pinned():
+    # 20 mm square cut "on" the line with a 2 mm tool, 3 mm deep in 1 mm steps, entry ramp 1:5.
+    # 4 tabs, 2 mm wide (4 mm plateau on the tool path), 1 mm high (top at -2), tab ramps 1:2.
+    # Path distance s runs clockwise from (20, 0); tabs centre at s = 10, 30, 50, 70.
+    tp = ops.profile(box(0, 0, 20, 20), Tool("e2", 2.0), depth=3, step_down=1, side="on",
+                     ramp_angle=math.degrees(math.atan(0.2)),
+                     tabs={"count": 4, "width": 2, "height": 1, "ramp_angle": math.degrees(math.atan(0.5))})
+    pts = [(round(x, 4), round(y, 4), round(z, 4)) for x, y, z in feed_xy(tp)]
+    assert min(z for *_, z in pts[:13]) == -2.0            # passes at -1 and -2 don't see the tabs
+    last = pts[len(pts) - 1 - pts[::-1].index((10.0, 0.0, -2.0)) + 1:]   # last pass: entry ramp starts on the s=10 tab
+    assert last == [
+        (8.0, 0.0, -2.0), (6.6667, 0.0, -2.6667), (5.0, 0.0, -3.0),   # stay on the tab, ramp down 1:5
+        (0.0, 0.0, -3.0), (0.0, 6.0, -3.0), (0.0, 8.0, -2.0), (0.0, 12.0, -2.0), (0.0, 14.0, -3.0),
+        (0.0, 20.0, -3.0), (6.0, 20.0, -3.0), (8.0, 20.0, -2.0), (12.0, 20.0, -2.0), (14.0, 20.0, -3.0),
+        (20.0, 20.0, -3.0), (20.0, 14.0, -3.0), (20.0, 12.0, -2.0), (20.0, 8.0, -2.0), (20.0, 6.0, -3.0),
+        (20.0, 0.0, -3.0), (14.0, 0.0, -3.0), (12.0, 0.0, -2.0), (8.0, 0.0, -2.0), (6.0, 0.0, -3.0),
+        (5.0, 0.0, -3.0)]
+
+
+def test_tabs_leave_material_and_pass_verify():
+    from camcore.verify import Machine, run
+    tool = Tool("em6", 6.0, number=1)                       # not centre-cutting
+    part = box(0, 0, 60, 40)
+    tp = ops.profile(part, tool, depth=6, step_down=2, tabs={"spacing": 50, "width": 5, "height": 1.5})
+    zs = [z for *_, z in feed_xy(tp)]
+    assert min(zs) == -6.0 and -4.5 in {round(z, 6) for z in zs}
+    m = Machine(tools={1: {"diameter": 6, "kind": "flat", "flute_length": 20}},
+                work_offset={"x": 50, "y": 50, "z": -100})
+    stock = {"type": "box", "x": [-10, 70], "y": [-10, 50], "z": [-6, 0]}
+    issues, _, sim = run(get_post("linuxcnc").emit([tp]), m, stock, res=0.25)
+    assert [str(i) for i in issues] == []
+    # one cell just outside the part edge, mid tab vs. away from tabs
+    perim = 2 * (60 + 40) + 2 * math.pi * 3
+    def h(x, y):
+        return sim.h[int(round((x + 10) / 0.25)), int(round((y + 10) / 0.25))]
+    assert round(perim / 50) == 4
+    assert min(h(x, -1.0) for x in (5, 30, 55)) <= -6 + 0.01           # through-cut somewhere on the bottom edge
+    assert max(h(x, -1.0) for x in [i * 0.25 for i in range(0, 241)]) == pytest.approx(-4.5, abs=0.01)
+
+
+def test_tab_settings_are_checked():
+    sq = box(0, 0, 20, 20)
+    bad = [({"width": 2, "height": 1}, "count"), ({"count": 2, "spacing": 5, "width": 2, "height": 1}, "count"),
+           ({"count": 2, "width": 2, "height": 3}, "height"), ({"count": 20, "width": 2, "height": 1}, "fit"),
+           ({"count": 2, "width": 2, "height": 1, "ramp_angle": 40}, "ramp_angle"),
+           ({"count": 2, "width": 2, "height": 1, "size": 3}, "unknown")]
+    for spec, msg in bad:
+        with pytest.raises(ValueError, match=msg):
+            ops.profile(sq, Tool("e2", 2.0), depth=3, step_down=1, side="on", tabs=spec)
+
+
+def test_cutout_example_is_pinned():
+    ex = Path(__file__).parent.parent / "examples"
+    assert job_to_gcode(ex / "cutout_job.json") == (ex / "cutout.ngc").read_text()

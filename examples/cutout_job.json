@@ -1,0 +1,16 @@
+{
+  "post": "linuxcnc",
+  "tool_library": "tools.json",
+  "stock": {"type": "box", "x": [0, 120], "y": [0, 80], "z": [-6, 0]},
+  "defaults": {"safe_z": 5.0},
+  "shapes": {
+    "part": {"type": "difference",
+             "a": {"type": "rect", "x": 10, "y": 10, "w": 100, "h": 60},
+             "b": {"type": "circle", "cx": 60, "cy": 40, "r": 12}}
+  },
+  "operations": [
+    {"op": "profile", "shape": "part", "tool": "em3", "side": "outside",
+     "depth": 6.3, "step_down": 1.5, "feed": 1200, "plunge": 300,
+     "tabs": {"count": 4, "width": 6, "height": 1.5}}
+  ]
+}

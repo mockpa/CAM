@@ -229,6 +229,62 @@ def test_contour_check_refuses_points_off_the_contact(boss):
         surface._check_loop(boss, EM6, inside, -6.0, 0.0)
 
 
+S = 0.25        # shrink
+
+
+@pytest.mark.parametrize("tool, x, z", [
+    (EM6, 12.5, -S),                                         # flat: edge still under the narrower bottom
+    (EM6, 12.9, -20.0),                                      # flat: 2.9 > 2.75, falls past the edge
+    (BALL3, 11.0, math.sqrt(1.25 ** 2 - 1) - 1.5),           # ball radius 1.25, same centre
+    (BULL6, 12.5, math.sqrt(0.75 ** 2 - 0.5 ** 2) - 0.75 - S),   # corner 0.75 around radius 2.0
+    (Tool("bull6", 6.0, "bull", corner_radius=0.2, number=6), 12.5, -S),   # corner gone: a flat 5.5
+    (V90, 11.0, -1.0 - S / math.sin(math.radians(45))),     # cone side moved in S: point S/sin45 lower
+])
+def test_shrunk_cutter_is_the_inner_offset(block, tool, x, z):
+    # the real-tip height of the cutter shrunk by S (every surface point moved S inwards)
+    assert surface.drop_points(block, tool, [(x, 5)], -20.0, -S)[0] == pytest.approx(z, abs=1e-9)
+    assert surface.drop_points(block, tool, [(5, 5)], -20.0, -S)[0] == pytest.approx(-S if tool.kind != "vbit"
+                                                                                    else -S / math.sin(math.pi / 4))
+
+
+def test_contour_check_accepts_a_hairpin_tip():
+    # A V valley that gets shallower along X: the flat end mill fits into it at Z-3 up
+    # to X29.85, so the contour runs in and back out as a hairpin whose sides are 5.7 deg
+    # apart. OpenCAMLib can put two points right at the tip; the check used to probe
+    # 0.01 mm across the contour, and with the tip's neighbour so close, "across" points
+    # sideways into the valley walls on both sides: a correct contour was refused.
+    from camcore.relief.relief3d import block_mesh
+
+    xs, ys = np.arange(0, 40.01, 0.5), np.arange(0, 30.01, 0.5)
+    X, Y = np.meshgrid(xs, ys)
+    valley = block_mesh(xs, ys, np.minimum(0.0, -6 + 0.05 * X + 0.5 * np.abs(Y - 15)), -10)
+    loops = surface.waterline(valley, EM6, -3.0, 0.1)
+    (loop,) = [lp for lp in loops if ((lp[:, 0] > 29) & (np.abs(lp[:, 1] - 15) < 0.1)).any()]
+    in_valley = (np.abs(loop[:, 1] - 15) < 1) & (loop[:, 0] > 1) & (loop[:, 0] < 35)
+    i = int(np.argmax(np.where(in_valley, loop[:, 0], -np.inf)))
+    tip, nxt = loop[i], loop[(i + 1) % len(loop)]
+    assert tip == pytest.approx((29.85, 15), abs=0.01)
+    twin = tip + 0.004 * (nxt - tip) / np.hypot(*(nxt - tip))
+    pair = np.insert(loop, i + 1, twin, axis=0)
+    t = pair[i + 1] - pair[i - 1]
+    n = np.array([t[1], -t[0]]) / np.hypot(*t)
+    across = surface.drop_points(valley, EM6, [tip + 0.01 * n, tip - 0.01 * n], -4.0)
+    assert (across > -3 + 1e-6).all()                       # the old rule: no free side, refused
+    surface._check_loop(valley, EM6, pair, -3.0, 0.0)       # passes now
+    # The tolerance is how far the cutter is off touching the model, in 3D (the gouge it
+    # would make), not sideways: the valley floor rises 0.05 mm per mm, so 0.05 mm further
+    # in the cutter is only 0.0025 mm inside the model; 0.5 mm further, or 0.05 mm into a
+    # side wall (rising 0.5 mm per mm), it is 0.025 mm inside.
+    for push, ok in (((0.05, 0), True), ((0.5, 0), False), ((0, 0.05), False)):
+        moved = pair.copy()
+        moved[i] += push
+        if ok:
+            surface._check_loop(valley, EM6, moved, -3.0, 0.0)
+        else:
+            with pytest.raises(RuntimeError, match="off the model contact"):
+                surface._check_loop(valley, EM6, moved, -3.0, 0.0)
+
+
 def test_decimate_compares_at_the_same_xy():
     # a steep flank: dropping the middle point is a 1 mm Z error at its XY, although
     # the point is only ~0.1 mm from the straight move's line

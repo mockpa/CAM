@@ -46,7 +46,8 @@ from .tools import Tool
 
 LENGTH = 1000.0              # mm: cutter length for OpenCAMLib, longer than any model
 MIN_XY_AREA = 1e-8           # mm^2: triangles with less XY area are left out (see the module docstring)
-CHECK_TOL = 0.01             # mm: a waterline point must lie this close to the contact (see _check_loop)
+CHECK_TOL = 0.01             # mm: at a waterline point the cutter is at most this far off touching the model,
+                             # clear of it or inside it (see _check_loop)
 _SURF: dict = {}             # id(mesh) -> (mesh, Surf)
 
 
@@ -117,15 +118,24 @@ def stl_surf(mesh) -> Surf:
 
 
 def cutter(tool: Tool, leave: float = 0.0):
-    """OpenCAMLib cutter for a camcore tool, grown by `leave` (exact offset)."""
+    """OpenCAMLib cutter for a camcore tool, grown by `leave` (exact offset). A negative
+    `leave` gives the cutter shrunk by -leave (its inner offset): the same kind of cutter
+    2 x -leave narrower, its corner radius -leave smaller; `tip_shift` says how far its
+    tip sits from the real one."""
     o = ocl()
     d = tool.diameter
+    if leave < 0:
+        s = -leave
+        if s >= tool.radius:
+            raise ValueError(f"cannot shrink a {d:g} mm cutter by {s:g} mm")
+        d -= 2 * s
     if tool.kind == "flat":
         c = o.CylCutter(d, LENGTH)
     elif tool.kind == "ball":
         c = o.BallCutter(d, LENGTH)
     elif tool.kind == "bull":
-        c = o.BullCutter(d, tool.corner_radius, LENGTH)
+        r = tool.corner_radius + min(leave, 0.0)
+        c = o.BullCutter(d, r, LENGTH) if r > 1e-9 else o.CylCutter(d, LENGTH)
     elif tool.kind == "vbit":
         c = o.ConeCutter(d, math.radians(tool.v_angle) / 2, LENGTH)
     else:
@@ -133,23 +143,33 @@ def cutter(tool: Tool, leave: float = 0.0):
     return c.offsetCutter(leave) if leave > 0 else c
 
 
+def tip_shift(tool: Tool, leave: float) -> float:
+    """Real tip Z minus the tip Z of `cutter(tool, leave)` at the same position: a grown
+    cutter reaches `leave` lower; a shrunk one starts -leave higher (a V-bit's cone side
+    moves in by -leave, so its point rises -leave / sin(half angle))."""
+    if leave < 0 and tool.kind == "vbit":
+        return leave / math.sin(math.radians(tool.v_angle) / 2)
+    return leave
+
+
 def drop_points(mesh, tool: Tool, xy: np.ndarray, floor: float, leave: float = 0.0) -> np.ndarray:
-    """Tip Z for each (x, y) in an (n, 2) array (never below `floor`)."""
+    """Tip Z for each (x, y) in an (n, 2) array (never below `floor`); `leave` as in `cutter`."""
     o = ocl()
     # OpenCAMLib keeps raw pointers to the surface and cutter: hold them for the run
     surf, cut = stl_surf(mesh), cutter(tool, leave)
     sx, sy, sz = surf.shift
+    k = tip_shift(tool, leave)
     bdc = o.BatchDropCutter()
     bdc.setSTL(surf.stl)
     bdc.setCutter(cut)
     for x, y in np.asarray(xy, dtype=float):
-        bdc.appendPoint(o.CLPoint(float(x - sx), float(y - sy), float(floor - leave - sz)))
+        bdc.appendPoint(o.CLPoint(float(x - sx), float(y - sy), float(floor - k - sz)))
     with _quiet():
         bdc.run()
     cl = bdc.getCLPoints()
     if len(cl) != len(xy):
         raise RuntimeError("OpenCAMLib returned a different number of points than it was given")
-    return np.maximum(np.array([p.z for p in cl]) + sz + leave, floor)
+    return np.maximum(np.array([p.z for p in cl]) + sz + k, floor)
 
 
 def drop_path(mesh, tool: Tool, polyline, floor: float, sampling: float, leave: float = 0.0,
@@ -245,20 +265,17 @@ def _canonical(loop: np.ndarray) -> np.ndarray:
 
 
 def _check_loop(mesh, tool: Tool, loop: np.ndarray, z: float, leave: float):
-    """Every waterline point must be where the cutter at tip height z touches
-    the model: grown by CHECK_TOL it cannot get down to z there (contact is
-    near), and CHECK_TOL across the contour on one side it fits at z (it is not
-    inside the model). The contour itself is tested on both sides because the
-    drop height steps right at it (tangent contact counts as contact). Raises
-    instead of letting a bad contour reach a toolpath."""
+    """Every waterline point must be within CHECK_TOL of where the cutter at tip
+    height z touches the model: grown by CHECK_TOL it cannot get down to z there
+    (the model is near), and shrunk by CHECK_TOL it can (the point is not inside
+    the model). Both are tested at the point itself, so they need no direction:
+    probing across the contour fails at the tip of a hairpin (a valley the cutter
+    just fits into), where both sides across are material. Raises instead of
+    letting a bad contour reach a toolpath."""
     floor = z - 1.0
-    ahead, behind = np.roll(loop, -1, axis=0), np.roll(loop, 1, axis=0)
-    t = ahead - behind
-    n = np.column_stack([t[:, 1], -t[:, 0]]) / np.maximum(np.hypot(t[:, 0], t[:, 1]), 1e-12)[:, None]
-    side_a = drop_points(mesh, tool, loop + CHECK_TOL * n, floor, leave)
-    side_b = drop_points(mesh, tool, loop - CHECK_TOL * n, floor, leave)
     grown = drop_points(mesh, tool, loop, floor, leave + CHECK_TOL)
-    bad = (np.minimum(side_a, side_b) > z + 1e-6) | (grown < z - 1e-6)
+    shrunk = drop_points(mesh, tool, loop, floor, leave - CHECK_TOL)
+    bad = (shrunk > z + 1e-6) | (grown < z - 1e-6)
     if bad.any():
         x, y = loop[np.argmax(bad)]
         raise RuntimeError(f"OpenCAMLib waterline at Z{z:g} has {int(bad.sum())} point(s) off the model "

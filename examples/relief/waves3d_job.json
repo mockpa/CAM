@@ -1,0 +1,77 @@
+{
+  "post": "linuxcnc",
+  "tool_library": "../tools.json",
+  "material": "hardwood",
+  "stock": {
+    "type": "box",
+    "x": [
+      0.0,
+      110.0
+    ],
+    "y": [
+      0.0,
+      70.0
+    ],
+    "z": [
+      -12.0,
+      0.0
+    ]
+  },
+  "models": {
+    "waves3d": {
+      "file": "waves3d.stl"
+    }
+  },
+  "defaults": {
+    "safe_z": 5.0
+  },
+  "operations": [
+    {
+      "id": "rough",
+      "op": "surface_rough",
+      "model": "waves3d",
+      "tool": "em6",
+      "stock_to_leave": 0.5,
+      "floor": -7.5
+    },
+    {
+      "id": "finish",
+      "op": "surface_finish",
+      "model": "waves3d",
+      "tool": "ball3",
+      "strategy": "raster",
+      "angle": 0.0,
+      "boundary": [
+        3.5,
+        3.5,
+        106.5,
+        66.5
+      ],
+      "floor": -8.0,
+      "after": [
+        "rough"
+      ]
+    }
+  ],
+  "relief": {
+    "mode": "3d",
+    "depth": 8,
+    "thickness": 12,
+    "frame": 5,
+    "resolution": 0.5,
+    "rough": true,
+    "rough_tool": "em6",
+    "finish_tool": "ball3",
+    "stock_to_leave": 0.5,
+    "finish_stepover": null,
+    "finish_dir": "x",
+    "width": 100.0,
+    "height": 60.0,
+    "source": {
+      "file": "waves.png",
+      "width": 100,
+      "height": 60,
+      "blur": 1.0
+    }
+  }
+}

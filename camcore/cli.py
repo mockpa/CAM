@@ -1,5 +1,6 @@
 """Command line: camcore JOB.json [-o out.nc], camcore check JOB.json (see check.py),
-camcore rotary-wizard MODEL.stl (see wizard.py), camcore inlay-fit POCKET.json PLUG.json
+camcore rotary-wizard MODEL.stl (see wizard.py), camcore relief INPUT (see relief/cli.py),
+camcore inlay-fit POCKET.json PLUG.json
 (see inlay_fit.py) or camcore gui [JOB.json] (see gui/)"""
 from __future__ import annotations
 
@@ -19,6 +20,9 @@ def main(argv=None):
     if argv[:1] == ["rotary-wizard"]:
         from .wizard import main as wizard_main
         sys.exit(wizard_main(argv[1:]))
+    if argv[:1] == ["relief"]:
+        from .relief.cli import main as relief_main
+        sys.exit(relief_main(argv[1:]))
     if argv[:1] == ["inlay-fit"]:
         from .inlay_fit import main as fit_main
         sys.exit(fit_main(argv[1:]))

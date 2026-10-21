@@ -1,7 +1,8 @@
 # Relief designs (Reliefwerk) in camcore: plan
 
 > **Status:** phases 1-6 (height field, 3D relief job, lamella geometry, nesting and board jobs, pins and
-> paperwork, `camcore relief`) done on branch `relief`, with `profile` tabs at given points. Phase 7 open.
+> paperwork, `camcore relief`, the app's relief dialog): all done on branch `relief`, with `profile` tabs at
+> given points. Open: speed of large 3D reliefs (see Risks).
 > Source: Paul's Reliefwerk 1.0 (`reliefwerk.zip`: reliefwerk.py, rw_core.py, rw_modes.py, rw_preview.py),
 > reviewed 2026-10-18. Decisions (all defaults taken): Reliefwerk is Paul's own code and may go in the
 > public repo; pins get paperwork only (no back-board job); lamella tabs stay on the bottom edge; the
@@ -92,7 +93,9 @@ camcore jobs. Reliefwerk's own G-code writer is not ported: every program still 
    (default no) so a plain run asks little; every job's `check` runs with the sim unless `--no-sim`; pins have
    no job (paperwork only). `NAME_height.png` shows the prepared relief for a quick look at its orientation.
 7. **Desktop app.** Relief dialog from the same question list with a shaded height preview; offscreen
-   GUI tests; MANUAL.md relief chapter.
+   GUI tests; MANUAL.md relief chapter. **Done** (`gui/relief_dialog.py`, `relief/preview.py`, MANUAL section 5.6). Found on
+   the way: the check runner's worker thread could free Qt objects through the cyclic garbage collector
+   and crash the app; the runner now keeps collection on the GUI thread (`gui/runner.py`).
 
 ## Testing
 Unit tests (`tests/test_relief_*.py`, synthetic inputs, exact numbers), golden jobs in `examples/relief/`

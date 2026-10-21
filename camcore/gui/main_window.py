@@ -121,6 +121,9 @@ class MainWindow(QMainWindow):
         self.a_save_as = act("Save &As…", self.save_as, QKeySequence.SaveAs)
         self.a_quit = act("&Quit", self.close, QKeySequence.Quit)
         self.a_wizard = act("Rotary &wizard…", self.wizard)
+        self.a_relief = act("&Relief…", self.relief)
+        self.a_relief.setToolTip("Lamellas, a 3D relief or pins from an image or STL: writes the jobs and "
+                                 "paperwork and checks every job")
         self.a_preview = act("&Preview", self.preview, "Ctrl+R")
         self.a_preview.setToolTip("Generate and dry-run the program (no LinuxCNC sim) and show it. "
                                   "Nothing is written to the output folder.")
@@ -138,9 +141,10 @@ class MainWindow(QMainWindow):
         r.addAction(self.a_export)
         t = m.addMenu("&Tools")
         t.addAction(self.a_wizard)
+        t.addAction(self.a_relief)
         tb = QToolBar("Main")
         self.addToolBar(tb)
-        for a in (self.a_open, self.a_save, self.a_wizard):
+        for a in (self.a_open, self.a_save, self.a_wizard, self.a_relief):
             tb.addAction(a)
         tb.addSeparator()
         tb.addAction(self.a_preview)
@@ -291,6 +295,11 @@ class MainWindow(QMainWindow):
         self.report.appendPlainText(line)
 
     def _finished(self, ok: bool, view: str):
+        queue = getattr(self, "_queue", [])
+        if ok and queue:                    # more relief boards to check: the next one, same settings
+            self._start(self._queue_out, self._exporting, queue.pop(0))
+            return
+        self._queue = []
         self.a_preview.setEnabled(True)
         self.a_export.setEnabled(True)
         self.last_result = (ok, view, self._exporting)
@@ -316,6 +325,36 @@ class MainWindow(QMainWindow):
             return
         self.run_wizard(WizardDialog(Path(stl), Path(out).parent, self.project.library_path(),
                                      self._machine_path(), self))
+
+    def relief(self):
+        from .relief_dialog import ReliefDialog
+        if not self._discard_ok():
+            return
+        src, _ = QFileDialog.getOpenFileName(self, "Relief: image or STL", str(self.project.base),
+                                             "Images and STL (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp *.stl)")
+        if not src:
+            return
+        out = QFileDialog.getExistingDirectory(self, "Relief: output folder", str(Path(src).parent / "out"))
+        if not out:
+            return
+        self.run_relief(ReliefDialog(Path(src), Path(out), self.project.library_path(), self._machine_path(), parent=self))
+
+    def run_relief(self, dialog) -> bool:
+        """Show the dialog; on OK open the first job it wrote and check every job in turn."""
+        if not dialog.exec() or dialog.jobs is None:
+            return False
+        if not dialog.jobs:                 # pins: nothing to machine
+            QMessageBox.information(self, "Relief", f"Pins have nothing to machine: the cut list and pin plan "
+                                                    f"are in {dialog.out_dir}.")
+            return True
+        self.open(dialog.jobs[0])
+        self.out_dir_custom = str(dialog.out_dir)
+        self.out_edit.setText(self.out_dir_custom)
+        self._queue, self._queue_out = list(dialog.jobs[1:]), dialog.out_dir
+        if self._queue:
+            self.statusBar().showMessage(f"{len(dialog.jobs)} boards: checking them one after another")
+        self._start(dialog.out_dir, sim=dialog.sim.isChecked(), job_path=dialog.jobs[0])
+        return True
 
     def _machine_path(self) -> Path | None:
         m = self.project.job.get("machine")

@@ -242,3 +242,16 @@ def test_flat_stl_is_refused():
     tri = np.array([[[0, 0, 0], [1, 0, 0], [2, 0, 0]]], dtype=float)
     with pytest.raises(ValueError, match="no extent"):
         hf.drop(tri, 0.5)
+
+
+def test_shaded_preview_lights_slopes_facing_the_upper_left():
+    from camcore.relief.preview import shaded
+
+    # a roof: rising to a ridge along X = 50, so the left half faces left, the right half right
+    x = np.linspace(0, 1, 101, dtype=np.float32)
+    F = hf.HeightField(np.tile(1 - np.abs(x - 0.5) * 2, (41, 1)), 100, 40)
+    img = shaded(F, 20, max_side=200)
+    assert img.dtype == np.uint8 and img.shape == (80, 200)
+    assert img[40, 50] > img[40, 150] + 50                  # the left slope faces the light
+    flat = shaded(hf.HeightField(np.zeros((5, 5), np.float32), 10, 10), 20)
+    assert flat.min() == flat.max() == round(40 + 215 * np.sin(np.radians(35)))

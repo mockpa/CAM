@@ -269,3 +269,120 @@ def test_embedded_viewer_loads_the_program(qtbot, ex, monkeypatch):
         assert (True, str(w.preview_dir / "cutout_view.html")) in loads
     finally:
         w.close()
+
+
+# --- relief dialog (relief plan phase 7) ---------------------------------------------------------
+
+from camcore.gui.relief_dialog import ReliefDialog  # noqa: E402
+from camcore.relief.cli import main as relief_main  # noqa: E402
+
+PNG = EX / "relief" / "waves.png"
+SMALL = {"width": "120", "thickness": "12", "base": "8", "relief": "15", "board_width": "200", "board_height": "150"}
+
+
+def fill(qtbot, d, answers):
+    for key, text in answers.items():
+        w = d.widget(key)
+        if isinstance(w, QComboBox):
+            w.setCurrentText(text)
+            w.textActivated.emit(text)
+        else:
+            type_into(qtbot, w, text)
+
+
+def test_relief_dialog_writes_the_same_files_as_the_cli(qtbot, tmp_path):
+    cli_out, gui_out = tmp_path / "a" / "out", tmp_path / "b" / "out"
+    assert relief_main([str(PNG), "-o", str(cli_out), "--yes", "--no-sim", "--no-open", "--width", "120",
+                        "--thickness", "12", "--base", "8", "--relief", "15", "--board-width", "200",
+                        "--board-height", "150", "--interlock", "y"], input_fn=None) == 0
+    d = ReliefDialog(PNG, gui_out)
+    qtbot.addWidget(d)
+    fill(qtbot, d, {**SMALL, "interlock": "y"})
+    assert d.refresh()
+    d.accept()
+    assert [p.name for p in d.jobs] == ["waves_sheet1_job.json", "waves_sheet2_job.json"]
+    for p in d.jobs:
+        assert json.loads(p.read_text()) == json.loads((cli_out / p.name).read_text())
+    assert (gui_out / "waves_parts.csv").read_text() == (cli_out / "waves_parts.csv").read_text()
+
+
+def test_relief_dialog_shows_what_applies_and_previews(qtbot, tmp_path):
+    d = ReliefDialog(PNG, tmp_path)
+    qtbot.addWidget(d)
+    assert d.visible("thickness") and d.visible("interlock") and not d.visible("shape")
+    assert not d.visible("invert") and not d.visible("stl_view")          # behind "adjust", not an STL
+    assert d.widget("height").placeholderText() == "400"                  # 600 wide, the image's 3:2
+    before = d.image.copy()
+    assert not before.isNull() and before.width() == 480
+    fill(qtbot, d, {"mode": "pins"})
+    assert d.visible("shape") and d.visible("levels") and not d.visible("thickness")
+    fill(qtbot, d, {"adjust": "y"})
+    assert d.visible("invert") and d.visible("rotate")
+    fill(qtbot, d, {"invert": "y"})
+    assert d.image != before                                              # the preview follows
+    fill(qtbot, d, {"rotate": "90"})
+    assert d.widget("height").placeholderText() == "900"                  # turned: 2:3
+
+
+def test_relief_dialog_checks_answers_like_the_cli(qtbot, tmp_path):
+    d = ReliefDialog(PNG, tmp_path)
+    qtbot.addWidget(d)
+    fill(qtbot, d, {"adjust": "y", "black": "30", "white": "20"})
+    assert d.message("white") == "20 is too small: it must be above the black point (30 %)"
+    assert not d.buttons.button(d.buttons.StandardButton.Ok).isEnabled()
+    assert not d.widget("gamma").isEnabled()                              # waits for a valid white point
+    fill(qtbot, d, {"white": "90", "board_width": "2000"})
+    assert "the machine reaches 1015 mm" in d.message("board_width")
+    fill(qtbot, d, {**SMALL, "board_width": "80", "board_height": "80"})  # valid answers, impossible design
+    d.accept()
+    assert d.jobs is None and "do(es) not fit" in d.error.text() and not d.error.isHidden()
+
+
+def test_relief_from_the_main_window_checks_every_board(qtbot, window, tmp_path):
+    w = window()
+    d = ReliefDialog(PNG, tmp_path / "out")
+    qtbot.addWidget(d)                  # deleted on the GUI thread: a dialog left to the garbage collector
+    fill(qtbot, d, SMALL)               # can be freed on the check's worker thread, which crashes Qt
+    d.sim.setChecked(False)
+    d.exec = lambda: (d.accept(), 1)[1]
+    ok, view, _ = run_check(qtbot, w, lambda: w.run_relief(d))
+    assert ok, w.report.toPlainText()
+    assert w.project.path == (tmp_path / "out" / "waves_sheet1_job.json").resolve()
+    assert (tmp_path / "out" / "waves_sheet1.ngc").exists() and (tmp_path / "out" / "waves_sheet2.ngc").exists()
+    assert Path(view) == tmp_path / "out" / "waves_sheet2_view.html"
+
+
+def test_relief_pins_from_the_main_window(qtbot, window, tmp_path, monkeypatch):
+    w = window()
+    told = []
+    monkeypatch.setattr("camcore.gui.main_window.QMessageBox.information", lambda *a: told.append(a[2]))
+    d = ReliefDialog(PNG, tmp_path / "out")
+    qtbot.addWidget(d)
+    fill(qtbot, d, {"mode": "pins"})
+    d.exec = lambda: (d.accept(), 1)[1]
+    assert w.run_relief(d) and "nothing to machine" in told[0]
+    assert (tmp_path / "out" / "waves_pin_plan.svg").exists()
+
+
+def test_check_runner_never_frees_qt_objects_on_its_thread(qtbot, ex, tmp_path):
+    # Qt widgets left in reference cycles are garbage the cyclic collector will find; if it
+    # runs on the check's worker thread it frees them there and Qt crashes (this brought the
+    # relief GUI tests down). The runner collects on the GUI thread first and keeps automatic
+    # collection off until the check is done.
+    import gc
+
+    from PySide6.QtWidgets import QLabel, QWidget
+
+    from camcore.gui.runner import CheckRunner
+
+    for _ in range(50):
+        w = QWidget()
+        w.label = QLabel(w)
+        w.cycle = w                         # only the cyclic collector can free it
+        del w
+    runner = CheckRunner()
+    with qtbot.waitSignal(runner.finished, timeout=120_000) as blocker:
+        runner.start(ex / "cutout_job.json", tmp_path, sim=False)
+        assert not gc.isenabled()
+    assert blocker.args[0] is True
+    assert gc.isenabled()

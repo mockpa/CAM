@@ -152,6 +152,7 @@ The window has four tabs on the left for editing and two on the right for result
 | **Run → Preview** (Ctrl+R) | saves and runs the check without the sim into a scratch folder, then shows it in Viewer and Report. A look, never a program. |
 | **Run → Export** (Ctrl+E) | saves and runs the full check with the sim into the output folder (default `out/` next to the job). The `.ngc` appears only if everything passed. |
 | **Tools → Rotary wizard…** | the questions of `camcore rotary-wizard` as a dialog (section 6) |
+| **Tools → Relief…** | lamellas, a 3D relief or pins from an image or STL: the questions of `camcore relief` with a shaded preview; checks every job it writes (section 5.6) |
 
 Typical loop: change a value, Ctrl+R, look, repeat; Export once at the end.
 
@@ -270,6 +271,58 @@ floor. The V-bit must cut `pocket_depth - glue_gap + surface_gap` deep at its fu
   base surface.
 - **Try it in MDF first**: wood moves, bits wear, and a real 60° bit is rarely exactly 60°. A test inlay
   shows whether you need a slightly bigger `glue_gap`.
+
+### 5.6 Relief designs: lamellas, 3D reliefs and pins
+
+A picture (bright = high; 8 or 16 bit) or an STL becomes wall art in one of three ways:
+
+| Design | What you get | Machining |
+|---|---|---|
+| **Lamellas** | the relief cut into strips that stand on edge side by side on a back board; each strip's top edge follows the relief | one job per board: every strip cut out with a `profile`, tabs on its bottom (glued) edge |
+| **3D relief** | the relief milled as a surface out of a block or glued-up board, with an optional frame left at full height | one job: `surface_rough` with an end mill, then `surface_finish` with a ball nose, with a tool change between |
+| **Pins** | a grid of square, round or hex pins cut to a few lengths | none: a cut list, a position list and a pin plan |
+
+```bash
+camcore relief photo.png                       # asks everything, suggests an answer for each
+camcore relief photo.png --yes --mode 3d --width 300 --depth 15 --no-sim   # take the suggestions
+camcore relief model.stl --view y              # an STL seen from the front
+```
+
+The questions: the design, how to look at an STL, whether to adjust the picture (turn, mirror, crop
+or stretch, smoothing in mm, black and white point, gamma, invert: skipped unless you say yes),
+the artwork size, the material, then the design's own (strip thickness = board thickness, heights,
+board size, tool, interlocking and tabs; depth, frame, stock and tools for 3D; pin shape, size and
+number of lengths). Every question has a flag (`camcore relief --help`). In the app it is
+**Tools → Relief…**, with a shaded preview that follows your answers.
+
+The output folder gets `NAME_height.png` (the prepared relief, white = high, to check which way up it
+is), then:
+- **Lamellas**: `NAME_sheetN_job.json` and, if its check passes, `NAME_sheetN.ngc` per board;
+  `NAME_parts.csv` (every strip: length, heights, where it goes, which board, where on it, turned or
+  not); `NAME_assembly.svg` (the artwork from the front, every strip labelled); `NAME_boardN.svg` and
+  `.dxf` (the parts on the board with labels and tabs). A red dot marks each strip's start on both plans,
+  so you know which way round it goes.
+- **3D relief**: `NAME_job.json`, `NAME.stl` (the block, X0 Y0 at its front left, Z0 on the stock top)
+  and `NAME.ngc` if the check passes.
+- **Pins**: `NAME_cut_list.csv` (per length: count and bar length with the saw cuts),
+  `NAME_positions.csv` (A1, A2, ...: row A at the back) and `NAME_pin_plan.svg` / `.dxf`.
+
+Every job is checked like any other (with the sim unless `--no-sim`), and they are ordinary job files:
+open them in the app, change an operation and check again.
+
+Things camcore does differently from the original Reliefwerk, on purpose:
+- **Parts sit further apart.** Strip outlines stay 2 x tool diameter + 2 mm apart and the tool diameter
+  + 2 mm inside the board edge. Closer, the cuts of two neighbours meet at the peaks of a wavy edge and
+  the scrap in the valleys between them comes loose. Interlocking (`--interlock y`) pairs strips head
+  to tail where that saves board, at the same spacing.
+- **Boards are checked against the machine** before any toolpath: outside the travel, or on top of the
+  ATC rack, is refused with the reason.
+- **No finishing into fresh stock.** A 3D relief without roughing is refused unless it is no deeper than
+  the ball's normal step down, and so is a roughing tool with flutes shorter than the depth.
+- **Tabs stay on the bottom edge** (the glued one): sand them flush before glue-up.
+
+Large 3D reliefs take time: about 35 minutes for 300 x 200 mm at the default 0.5 mm grid, so try a
+coarser `--resolution` first.
 
 ## 6. Rotary work
 

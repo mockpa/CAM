@@ -58,6 +58,7 @@ The IR is the key contract: every mode produces the same IR, and simulation, pos
 - **Phase 2: medial-axis method** (done, `"method": "medial"`, `scipy.spatial.Voronoi`). Compute the Voronoi/medial axis (OpenVoronoi, or `scipy.spatial.Voronoi` on densely sampled boundary, or Boost.Polygon Voronoi via bindings) and drive the bit along the axis with depth = clearance radius. Gives sharp corners and far fewer moves.
 - **Flat-bottom V-carve**: cap depth at a max; clear the flat area with a pocket op using an endmill, V-bit only does the walls.
 - **Inlays** (done, `"op": "inlay"`, see `docs/inlay_plan.md`): pocket = flat-bottom V-carve; plug = mirrored design, V-carved from `pocket_depth - glue_gap` (`vcarve` `start_depth`) with the flange cleared flat; fit check on verify's simulated stock (`camcore/inlay_fit.py`). Later: a `rough_tool` for wide designs (a big end mill first, the clear tool only for the rest).
+- **Reliefs from images / STL** (in progress, see `docs/relief_plan.md`): Reliefwerk's lamellas, 3D relief and pins as a front end in `camcore/relief/` that writes ordinary jobs for `camcore check`. Phase 1 (height field core) done.
 
 ### 3D (Phase 3)
 - **Drop-cutter** is the core primitive: for each (x, y), drop the tool along Z until it touches the mesh (vertex, edge, facet tests per tool shape). Accelerate with a BVH/kd-tree over triangles.

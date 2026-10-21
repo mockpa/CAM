@@ -13,6 +13,7 @@ from . import ops
 from .ops.common import quad_segs
 from .ops.rotary import index_angles, stock_reach, stock_top
 from .post import job_post
+from .shapes import mirror
 from .svg import load_svg
 from .tools import Tool, load_library
 
@@ -36,6 +37,8 @@ def build_shape(spec: dict, base_dir: Path):
         g = unary_union([build_shape(s, base_dir) for s in spec["shapes"]])
     elif t == "difference":
         g = build_shape(spec["a"], base_dir).difference(build_shape(spec["b"], base_dir))
+    elif t == "mirror":
+        g = mirror(build_shape(spec["shape"], base_dir), spec.get("axis", "y"))
     else:
         raise ValueError(f"unknown shape type {t}")
     if "fit_origin" in spec:                      # move the drawing's lower-left corner here
@@ -193,7 +196,11 @@ def run_job(job: dict, base_dir: Path = Path(".")):
                 ct = ops.pocket(flat, tools[clear], spec["max_depth"], name="vcarve-clear", **cargs)
                 ct.spindle_rpm = crpm
                 mine.append([ct, f"{op_id}:clear", set(after)])
-            tp = fn(shape, tool, **spec)
+            if kind == "inlay":
+                spec.pop("fit_with", None)        # camcore check's fit check reads it from the job
+                tp = _inlay(shape, tool, spec, clear, clear_args, tools, job, params, rpm, op_id, after, mine)
+            else:
+                tp = fn(shape, tool, **spec)
         tp.spindle_rpm = rpm
         mine.append([tp, op_id, set(after) | {n[1] for n in mine}])   # the V-bit pass waits for its clearing
         if index_spec is not None:
@@ -220,6 +227,24 @@ def run_job(job: dict, base_dir: Path = Path(".")):
         wrapped = [tp if id(tp) in native else ops.wrap(tp, rotary["diameter"], safe) for tp in paths]
         paths = wrapped
     return continue_a(paths, native)
+
+
+def _inlay(shape, tool, spec, clear, clear_args, tools, job, params, rpm, op_id, after, mine):
+    """An inlay part: the clear tool's floor (pocket) or flange (plug) first, then the V-bit."""
+    if not clear:
+        raise ValueError(f"operation {op_id!r}: inlay needs a clear_tool (an end mill for the flat areas)")
+    if spec.get("part", "pocket") == "plug" and "stock" not in spec:
+        spec["stock"] = job.get("stock")
+    region, depth = ops.inlay_clear_area(shape, tool, tools[clear], **spec)
+    if not region.is_empty:
+        cargs = params(ops.pocket, clear, {"top_z": spec.get("top_z", 0.0), "safe_z": spec.get("safe_z", 5.0),
+                                           **clear_args})
+        cargs.setdefault("step_down", depth)
+        crpm = cargs.pop("rpm", rpm)
+        ct = ops.pocket(region, tools[clear], depth, name="inlay-clear", **cargs)
+        ct.spindle_rpm = crpm
+        mine.append([ct, f"{op_id}:clear", set(after)])
+    return ops.inlay(shape, tool, **spec)
 
 
 def index_nodes(passes, angles, stock, face_z, clearance):

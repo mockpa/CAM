@@ -124,6 +124,18 @@ def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: s
         if errors:
             fail("camcore-verify found errors")
 
+    if ok and any(op.get("op") == "inlay" and op.get("fit_with") for op in job.get("operations", [])):
+        from .inlay_fit import fit_for
+        log("checking the inlay fit against the pocket job...")
+        try:
+            result = fit_for(job_path, job, base, machine_path)
+            lines.append("inlay fit: " + ("OK" if result.ok else "FAILED"))
+            lines += [f"  {s}" for s in result.lines()]
+            if not result.ok:
+                fail("the inlay plug does not fit its pocket")
+        except Exception as e:            # noqa: BLE001 - any failure here must end in a report
+            fail(f"inlay fit: {type(e).__name__}: {e}")
+
     if ok and sim:
         log("running the LinuxCNC sim (a few minutes for ~10000 moves)...")
         sim_ok, sim_log = run_sim(gcode, mdata, machine_path, library, image, machine.offset_for(stock))

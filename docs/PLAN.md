@@ -57,7 +57,7 @@ The IR is the key contract: every mode produces the same IR, and simulation, pos
 - **MVP method: offset-based.** Inset the shape in small increments `d`; each inset contour is cut at depth `d / tan(a/2)`. Simple, robust, and produces correct depth everywhere; resolution set by step size.
 - **Phase 2: medial-axis method** (done, `"method": "medial"`, `scipy.spatial.Voronoi`). Compute the Voronoi/medial axis (OpenVoronoi, or `scipy.spatial.Voronoi` on densely sampled boundary, or Boost.Polygon Voronoi via bindings) and drive the bit along the axis with depth = clearance radius. Gives sharp corners and far fewer moves.
 - **Flat-bottom V-carve**: cap depth at a max; clear the flat area with a pocket op using an endmill, V-bit only does the walls.
-- Inlay support (male/female) later; it is mostly a depth-offset variant.
+- **Inlays** (done, `"op": "inlay"`, see `docs/inlay_plan.md`): pocket = flat-bottom V-carve; plug = mirrored design, V-carved from `pocket_depth - glue_gap` (`vcarve` `start_depth`) with the flange cleared flat; fit check on verify's simulated stock (`camcore/inlay_fit.py`). Later: a `rough_tool` for wide designs (a big end mill first, the clear tool only for the rest).
 
 ### 3D (Phase 3)
 - **Drop-cutter** is the core primitive: for each (x, y), drop the tool along Z until it touches the mesh (vertex, edge, facet tests per tool shape). Accelerate with a BVH/kd-tree over triangles.

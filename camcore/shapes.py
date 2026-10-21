@@ -5,7 +5,18 @@ import math
 from collections import defaultdict
 
 from shapely.geometry import Polygon
+from shapely.affinity import scale
 from shapely.ops import unary_union
+
+
+def mirror(geom, axis: str = "y"):
+    """Mirror about the Y axis ("y": x -> -x) or the X axis ("x": y -> -y), done
+    about the bounding box centre so the lower-left corner stays where it was."""
+    if axis not in ("x", "y"):
+        raise ValueError(f'mirror axis must be "x" or "y", not {axis!r}')
+    minx, miny, maxx, maxy = geom.bounds
+    fx, fy = (-1, 1) if axis == "y" else (1, -1)
+    return scale(geom, fx, fy, origin=((minx + maxx) / 2, (miny + maxy) / 2))
 
 
 def rings_to_geom(rings):

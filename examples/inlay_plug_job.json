@@ -1,0 +1,15 @@
+{
+  "post": "linuxcnc",
+  "tool_library": "tools.json",
+  "material": "hardwood",
+  "stock": {"type": "box", "x": [20, 140], "y": [10, 90], "z": [-12, 0]},
+  "defaults": {"safe_z": 5.0},
+  "shapes": {
+    "art": {"type": "svg", "file": "sign.svg", "fit_origin": [30, 20]}
+  },
+  "operations": [
+    {"op": "inlay", "part": "plug", "shape": "art", "tool": "v60", "clear_tool": "em3",
+     "pocket_depth": 5, "glue_gap": 0.5, "surface_gap": 1.5,
+     "fit_with": "inlay_pocket_job.json"}
+  ]
+}

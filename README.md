@@ -32,6 +32,16 @@ This README is the feature list.
   moves and time (the sign's V pass: 59 lines instead of 446, 0.5 instead of 5 min) and a closer groove (`tolerance`, default
   0.01 mm of wall material). It descends along the V walls and plunges at the deepest points, so it needs
   `"entry": "plunge"` and a centre-cutting V-bit. Example: `examples/sign_medial_job.json`.
+- **Inlays** (`"op": "inlay"`): a V-carved pocket in the base board and a mirrored plug in the insert board, one
+  job each (`"part": "pocket"` / `"plug"`), same V-bit and the same `pocket_depth`, `glue_gap` (plug face above the
+  pocket floor) and `surface_gap` (plug flange above the base surface). The plug is the design mirrored and V-carved
+  from `pocket_depth - glue_gap` down, so its walls are the pocket's; `clear_tool` clears the pocket floor and the
+  plug's flange (the whole plug board, or `plug_margin` around the design). Medial by default, with plunges into
+  notches too sharp for any carving path. Settings that cannot fit are refused. `"fit_with": "pocket_job.json"` on
+  the plug makes `camcore check` flip the simulated plug into the simulated pocket and fail unless both gaps are
+  within 0.1 mm and the walls meet; `camcore inlay-fit POCKET PLUG` runs that alone. See
+  `examples/inlay_pocket_job.json` / `inlay_plug_job.json`.
+- **Shapes** can be mirrored: `{"type": "mirror", "shape": {...}, "axis": "y"}` (or `"x"`), lower-left corner kept.
 - **Drill**: peck drilling (centre-cutting tools only).
 - **Entry moves**: nothing plunges straight down by default. Pockets enter on a helix (falling back to a ramp
   along the loop where it does not fit) and link from loop to loop at depth; profiles and V-carve ramp along the

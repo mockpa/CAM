@@ -20,6 +20,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
+from shapely.geometry import LineString
 from shapely.geometry.base import BaseGeometry
 
 from ..tools import Tool
@@ -32,26 +33,43 @@ from .medial import medial_axis
 def vcarve(shape: BaseGeometry, tool: Tool, step: float = 0.1, max_depth: float | None = None,
            feed: float = 800, plunge: float = 300, safe_z: float = 5.0, top_z: float = 0.0,
            climb: bool = True, entry: str = "ramp", ramp_angle: float = 3.0,
-           method: str = "offset", tolerance: float = 0.01, name: str = "vcarve") -> Toolpath:
+           method: str = "offset", tolerance: float = 0.01, start_depth: float = 0.0,
+           name: str = "vcarve") -> Toolpath:
+    """start_depth: the groove starts that far below top_z at the shape's edge (the V
+    walls carry on up to the top above it), as for an inlay plug; max_depth counts
+    from top_z."""
+    return _vcarve(shape, tool, step, max_depth, feed, plunge, safe_z, top_z, climb, entry, ramp_angle,
+                   method, tolerance, start_depth, name)
+
+
+def _vcarve(shape, tool, step, max_depth, feed, plunge, safe_z, top_z, climb, entry, ramp_angle,
+            method, tolerance, start_depth=0.0, name="vcarve", keep=None) -> Toolpath:
+    """vcarve; `keep` (a region) drops rings and medial pieces that do not touch it."""
     if tool.kind != "vbit":
         raise ValueError("vcarve needs a V-bit")
     check_entry(entry, tool)
     limit = tool.depth_for_radius(tool.radius)       # bit fully engaged
     if max_depth is not None:
         limit = min(limit, max_depth)
+    if start_depth < 0:
+        raise ValueError("start_depth must be >= 0")
+    if limit <= start_depth:
+        raise ValueError(f"start_depth ({start_depth:g} mm) must be less than the depth the bit and "
+                         f"max_depth allow ({limit:.2f} mm)")
+    wanted = (lambda pts: True) if keep is None else (lambda pts: LineString(pts).intersects(keep))
     if method == "medial":
         if entry != "plunge":
             raise ValueError('vcarve method "medial" descends along the V walls and plunges at the deepest '
                              'points, so it needs entry "plunge" (and a center_cutting V-bit)')
         if not 0 < tolerance <= 0.1:
             raise ValueError("tolerance must be in (0, 0.1] mm")
-        return _medial(shape, tool, limit, tolerance, feed, plunge, safe_z, top_z, climb, name)
+        return _medial(shape, tool, limit, tolerance, feed, plunge, safe_z, top_z, climb, name, start_depth, wanted)
     if method != "offset":
         raise ValueError(f'vcarve method must be "offset" or "medial", not {method!r}')
     passes: list[Toolpath] = []
     r = step
     while True:
-        depth = tool.depth_for_radius(r)
+        depth = start_depth + tool.depth_for_radius(r)
         if depth > limit + 1e-9:
             break
         inset = offset(shape, -r)
@@ -60,6 +78,8 @@ def vcarve(shape: BaseGeometry, tool: Tool, step: float = 0.1, max_depth: float 
         level = Toolpath(name, tool)
         for p in polygons(inset):
             for ring in rings(p, climb, wall_outside=True):
+                if not wanted(ring):
+                    continue
                 if entry == "plunge":
                     level.cut_polyline(ring, top_z - depth, safe_z, feed, plunge)
                 else:
@@ -76,23 +96,27 @@ def vcarve(shape: BaseGeometry, tool: Tool, step: float = 0.1, max_depth: float 
     return tp
 
 
-def _medial(shape, tool, limit, tolerance, feed, plunge, safe_z, top_z, climb, name) -> Toolpath:
-    r_limit = limit * math.tan(math.radians(tool.v_angle) / 2)
+def _medial(shape, tool, limit, tolerance, feed, plunge, safe_z, top_z, climb, name, start_depth=0.0,
+            wanted=lambda pts: True) -> Toolpath:
+    r_limit = (limit - start_depth) * math.tan(math.radians(tool.v_angle) / 2)
     tp = Toolpath(name, tool)
 
     def z_of(r):
-        return top_z - tool.depth_for_radius(min(r, r_limit))
+        return top_z - start_depth - tool.depth_for_radius(min(r, r_limit))
 
     # where the groove is capped: the inset contour at the cap cuts the walls (deepest, first)
     for p in polygons(offset(shape, -r_limit)):
         for ring in rings(p, climb, wall_outside=True):
-            tp.cut_polyline(ring, top_z - limit, safe_z, feed, plunge)
+            if wanted(ring):
+                tp.cut_polyline(ring, top_z - limit, safe_z, feed, plunge)
 
     pieces = []                                   # (xy, r, start key, end key)
     visited = set()                               # nodes cut to their depth already
     for k, poly in enumerate(polygons(shape)):
         for c in medial_axis(poly, tolerance):
             for xy, r, a, b in _clip(c, r_limit, k):
+                if not wanted([tuple(q) for q in xy] * (2 if len(xy) == 1 else 1)):
+                    continue
                 pieces.append((xy, r, a, b))
                 visited |= {key for key in (a, b) if isinstance(key, tuple) and key[0] == "ring"}
     degree: dict = {}

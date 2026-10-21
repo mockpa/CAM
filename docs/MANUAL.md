@@ -178,6 +178,8 @@ Typical loop: change a value, Ctrl+R, look, repeat; Export once at the end.
 - **`fit_origin`**: moves the drawing's lower-left corner to that point. Give shapes from the same
   drawing the same `fit_origin` only if they share their lower-left corner; otherwise place each.
 - Combine shapes: `{"type": "union", "shapes": [...]}`, `{"type": "difference", "a": ..., "b": ...}`.
+  Mirror one: `{"type": "mirror", "shape": {...}, "axis": "y"}` (left-right; `"x"`: top-bottom), its
+  lower-left corner stays put.
 
 ### 5.2 Which operation for what
 
@@ -186,7 +188,8 @@ Typical loop: change a value, Ctrl+R, look, repeat; Export once at the end.
 | Cut a part out | `profile`, `side: "outside"` | `depth` a bit past the stock bottom (e.g. 6.3 for 6 mm), `tabs` to hold it, `lead_radius` for a clean start |
 | A slot along a line or an inside cutout | `profile`, `side: "on"` / `"inside"` | |
 | Clear an area to depth | `pocket` | `stepover_ratio` 0.4; `method: "adaptive"` with 0.1–0.25 for hard materials and deep pockets |
-| Lettering, inlays, decoration | `vcarve` with a V-bit | `method: "medial"` for sharp corners and fewer moves; `max_depth` + `clear_tool` for a flat bottom |
+| Lettering, decoration | `vcarve` with a V-bit | `method: "medial"` for sharp corners and fewer moves; `max_depth` + `clear_tool` for a flat bottom |
+| An inlay (one wood set into another) | `inlay`, one job per board | section 5.5 |
 | Holes | `drill` (centre-cutting tool) | `points`, `depth`, `peck` |
 | 3D relief from an STL | `surface_rough`, then `surface_finish` | section 5.3 |
 
@@ -232,6 +235,39 @@ job: every operation then takes its `feed`, `plunge`, `step_down`, `stepover_rat
 and `rpm` from the tool. A value written on the operation wins; the job's `defaults` fill what is
 left. A tool used in the job without data for the material is an error. The values in
 `examples/tools.json` are cautious starting points for 2-flute carbide.
+
+### 5.5 Inlays
+
+An inlay takes two jobs with the same drawing, the same V-bit and the same numbers. The pocket job
+cuts a pocket in the **base board** (the background), and the plug job cuts the mirrored design
+standing up from the **insert board** (the wood that shows in the pocket):
+
+```json
+{"op": "inlay", "part": "pocket", "shape": "art", "tool": "v60", "clear_tool": "em3",
+ "pocket_depth": 5, "glue_gap": 0.5, "surface_gap": 1.5}
+{"op": "inlay", "part": "plug",   "shape": "art", "tool": "v60", "clear_tool": "em3",
+ "pocket_depth": 5, "glue_gap": 0.5, "surface_gap": 1.5, "fit_with": "inlay_pocket_job.json"}
+```
+
+Give both the same, unmirrored `shape`: the plug job mirrors it. The plug is flipped face down into
+the pocket. Its walls meet the pocket's, its face sits `glue_gap` above the pocket floor, and its
+flange sits `surface_gap` above the base surface. Clamp pressure then goes into the walls, not the
+floor. The V-bit must cut `pocket_depth - glue_gap + surface_gap` deep at its full diameter, or the job is refused.
+
+- **Plug board**: by default the flange is cleared over the whole board (`clear_tool` runs off its
+  edges), so nothing needs trimming. With `"plug_margin": 10` only 10 mm around the design is cleared.
+  Trim the board inside that flange before gluing (the report says so).
+- **Corners**: the default `"method": "medial"` (centre-cutting V-bit, plunges) gives sharp corners on
+  both parts. `"offset"` rounds sharp corners off, which keeps the plug from seating.
+- **The fit check**: with `"fit_with"` on the plug, `camcore check` simulates both programs, turns the
+  plug over onto the pocket, lowers it until it touches and measures. It fails unless the bottom and
+  flange gaps are within 0.1 mm of `glue_gap` and `surface_gap` and the walls meet. `camcore inlay-fit
+  POCKET_job.json PLUG_job.json` prints the same numbers by itself.
+- **Glue-up**: spread glue in the pocket and on the plug walls, press the plug in, and clamp
+  across the whole plug with a caul. Once dry, plane or sand the back of the insert board down to the
+  base surface.
+- **Try it in MDF first**: wood moves, bits wear, and a real 60° bit is rarely exactly 60°. A test inlay
+  shows whether you need a slightly bigger `glue_gap`.
 
 ## 6. Rotary work
 
@@ -379,6 +415,7 @@ Shapes:
 | `dxf` | `file`, `layers`, `scale`, `join_tolerance` (0.01), `ignore_open` (false) |
 | `union` | `shapes` `[...]` |
 | `difference` | `a`, `b` |
+| `mirror` | `shape` `{...}`, `axis` (`"y"`: left-right, `"x"`: top-bottom); lower-left corner kept |
 | any | `fit_origin` `[x, y]`: lower-left corner moved there |
 
 Models: `{"file": "x.stl"}` plus placement, applied in this order: `along` (model axis put on X,
@@ -397,8 +434,14 @@ Every operation: `op`, `tool`, and `shape` / `model` / `points`; optional `id`, 
 `"plunge"`), `ramp_angle` (3), `helix_diameter` (0.8 × tool diameter)
 
 **vcarve**: `method` (`"offset"`; `"medial"`), `step` (0.1, offset method), `tolerance` (0.01, medial),
-`max_depth`, `clear_tool` + `clear` (`{pocket parameters}`, flat bottom), `feed` (800), `plunge` (300),
+`max_depth`, `start_depth` (0: the groove starts this far below `top_z` at the edge), `clear_tool` + `clear` (`{pocket parameters}`, flat bottom), `feed` (800), `plunge` (300),
 `safe_z` (5), `top_z` (0), `climb` (true), `entry` (`"ramp"`; medial needs `"plunge"`), `ramp_angle` (3)
+
+**inlay**: `pocket_depth`, `part` (`"pocket"`; `"plug"`), `glue_gap` (0.5), `surface_gap` (1.5),
+`clear_tool` (required) + `clear` (`{pocket parameters}`), `plug_margin` (none: the whole plug board),
+`fit_with` (plug: the pocket job, for the fit check), `method` (`"medial"`; `"offset"`), `entry`
+(`"plunge"`), `step` (0.1, offset), `tolerance` (0.01, medial), `feed` (800), `plunge` (300), `safe_z` (5),
+`top_z` (0), `climb` (true), `ramp_angle` (3)
 
 **drill**: `points`, `depth`, `peck` (none: one pass), `plunge` (200), `safe_z` (5), `retract_z` (1),
 `top_z` (0)

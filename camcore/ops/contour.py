@@ -57,12 +57,15 @@ class RingParam:
 class Tabs:
     """Tab profile on one contour: plateaus of `plateau` mm (tool path length) at `tab_top`."""
 
-    def __init__(self, length: float, spec: dict, tool_diameter: float, bottom_z: float, top_z: float):
-        unknown = set(spec) - {"count", "spacing", "width", "height", "ramp_angle"}
+    def __init__(self, length: float, spec: dict, tool_diameter: float, bottom_z: float, top_z: float,
+                 at: list[float] | None = None):
+        """`at`: tab centres as distances along this contour, for spec {"at": [...]} (the
+        caller projects the points onto the contour); else spaced evenly by count/spacing."""
+        unknown = set(spec) - {"count", "spacing", "at", "width", "height", "ramp_angle"}
         if unknown:
             raise ValueError(f"unknown tab settings: {', '.join(sorted(unknown))}")
-        if ("count" in spec) == ("spacing" in spec):
-            raise ValueError("tabs need either \"count\" or \"spacing\"")
+        if sum(k in spec for k in ("count", "spacing", "at")) != 1:
+            raise ValueError("tabs need exactly one of \"count\", \"spacing\" or \"at\"")
         width, height = float(spec["width"]), float(spec["height"])
         if width <= 0 or height <= 0:
             raise ValueError("tab width and height must be > 0")
@@ -71,12 +74,21 @@ class Tabs:
         angle = float(spec.get("ramp_angle", MAX_RAMP_ANGLE))
         if not 0 < angle <= MAX_RAMP_ANGLE:
             raise ValueError(f"tab ramp_angle must be in (0, {MAX_RAMP_ANGLE:g}] degrees")
-        n = int(spec["count"]) if "count" in spec else max(1, round(length / float(spec["spacing"])))
-        if n < 1:
-            raise ValueError("tab count must be at least 1")
         self.length, self.top, self.slope = length, bottom_z + height, math.tan(math.radians(angle))
         # On the tool path a tab is the material width plus the tool diameter long.
         self.half = (width + tool_diameter) / 2
+        if "at" in spec:
+            cs = sorted(c % length for c in (at or []))
+            gaps = [b - a for a, b in zip(cs, cs[1:] + [cs[0] + length])] if len(cs) > 1 else [length]
+            if min(gaps) < 2 * self.half - EPS:
+                raise ValueError(f"tabs {width:g} mm wide with a {tool_diameter:g} mm tool overlap: "
+                                 "place them further apart")
+            self.requested = len(cs)
+            self.centres = cs
+            return
+        n = int(spec["count"]) if "count" in spec else max(1, round(length / float(spec["spacing"])))
+        if n < 1:
+            raise ValueError("tab count must be at least 1")
         self.requested = n
         n = min(n, math.ceil(length / (2 * self.half)) - 1)     # as many as fit with a gap between them
         self.centres = [length * (i + 0.5) / n for i in range(n)] if n > 0 else []

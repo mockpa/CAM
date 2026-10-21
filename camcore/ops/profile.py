@@ -1,7 +1,7 @@
 """Profile (contour) cutting: inside, outside or on the line."""
 from __future__ import annotations
 
-from shapely.geometry import LinearRing, Polygon
+from shapely.geometry import LinearRing, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 
 from ..tools import Tool
@@ -39,9 +39,14 @@ def profile(shape: BaseGeometry, tool: Tool, depth: float, step_down: float,
     else:                       # inside: tool centre must stay inside the inset shape
         inset = offset_geom(shape, -tool.radius + 1e-6)
         keep_clear = lambda path: path.within(inset.buffer(1e-9))                       # noqa: E731
-    for ring in contours:
+    placed = place_tabs(contours, tabs["at"], tool.radius) if tabs and "at" in tabs else None
+    for k, ring in enumerate(contours):
         where = f"contour at ({ring[0][0]:.1f}, {ring[0][1]:.1f})"
-        tab = Tabs(RingParam(ring).length, tabs, tool.diameter, top_z - depth, top_z) if tabs else None
+        if placed is not None and not placed[k]:
+            tab = None                      # no tab asked for on this contour
+        else:
+            tab = Tabs(RingParam(ring).length, tabs, tool.diameter, top_z - depth, top_z,
+                       placed[k] if placed is not None else None) if tabs else None
         # Waste is on the left (climb) / right of travel; if that is the inside of this ring
         # and the tool mills (nearly) all of it away, there is no slug to hold.
         if tab and LinearRing(ring).is_ccw == climb and Polygon(ring).buffer(-tool.radius - MIN_SLUG / 2).is_empty:
@@ -62,3 +67,20 @@ def profile(shape: BaseGeometry, tool: Tool, depth: float, step_down: float,
         cut_contour(tp, ring, levels, top_z, entry, ramp_angle, feed, plunge, tab, lead)
         tp.rapid(z=safe_z)
     return tp
+
+
+def place_tabs(contours, points, tool_radius: float, reach: float = 1.0) -> list[list[float]]:
+    """Tab centres per contour (distances along it) for points given on the part's edge:
+    each point goes to the nearest tool-path contour (it lies a tool radius off it) and
+    sits where it projects onto it. A point more than `reach` mm further away than that
+    is on no contour: an error, so a tab is never silently dropped."""
+    rings = [LinearRing(r) for r in contours]
+    out = [[] for _ in rings]
+    for x, y in points:
+        p = Point(float(x), float(y))
+        d = [r.distance(p) for r in rings]
+        k = min(range(len(rings)), key=d.__getitem__) if rings else None
+        if k is None or d[k] > tool_radius + reach:
+            raise ValueError(f"tab at ({x:g}, {y:g}) is not on the edge of any contour")
+        out[k].append(rings[k].project(p) % rings[k].length)
+    return out

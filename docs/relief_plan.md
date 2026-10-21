@@ -1,6 +1,7 @@
 # Relief designs (Reliefwerk) in camcore: plan
 
-> **Status:** phase 1 (height field core) done on branch `relief`. Phases 2-7 open.
+> **Status:** phases 1-3 (height field, 3D relief job, lamella geometry) done on branch `relief`, and
+> `profile` tabs at given points (for phase 4). Phases 4-7 open.
 > Source: Paul's Reliefwerk 1.0 (`reliefwerk.zip`: reliefwerk.py, rw_core.py, rw_modes.py, rw_preview.py),
 > reviewed 2026-10-18. Decisions (all defaults taken): Reliefwerk is Paul's own code and may go in the
 > public repo; pins get paperwork only (no back-board job); lamella tabs stay on the bottom edge; the
@@ -45,14 +46,19 @@ camcore jobs. Reliefwerk's own G-code writer is not ported: every program still 
    `surface_rough` (flat end mill, stock to leave), `surface_finish` raster (ball), optional frame via
    `boundary`. *Done when* the example passes `camcore check` with the sim, a `worst_depth`-style check
    finds no gouge, and finishing without roughing is refused or warned (the 12 mm flute problem).
-   Measure OpenCAMLib time on 600 x 400 mm at 0.5 mm.
+   Measure OpenCAMLib time on 600 x 400 mm at 0.5 mm. **Done** (`relief/relief3d.py`, example `examples/relief/waves3d_job.json`).
+   Found on the way: `surface._check_loop` refused correct waterline contours at hairpin tips (it probed
+   across the contour); it now tests the cutter shrunk and grown by 0.01 mm at the point itself.
 3. **Lamella geometry** (`relief/lamella.py`). Strips (direction, thickness, gap, base, relief height,
    profile step, averaging over thickness); each a valid polygon simplified within 0.02 mm; valleys
-   narrower than the cutter filled so `profile` leaves no sliver.
+   narrower than the cutter filled so `profile` leaves no sliver. **Done** (`relief/lamella.py`; identical to
+   Reliefwerk's `lam_model` on its example). `profile`'s offset already bridges narrow valleys (no gouge, no
+   sliver); `cut_outline` gives that closed outline for nesting and the plans.
 4. **Nesting and sheet jobs** (`relief/nesting.py`, `relief/lamella_job.py`). MaxRects with rotation
    on/off; spacing = tool diameter + 2 mm web; a sheet beyond machine travel (from the machine JSON) is
    refused before any toolpath; one job per sheet, `profile` per lamella (outside, depth = thickness +
-   overcut, step-down, ramp, tabs), labels as op ids. Every part keeps its tabs.
+   overcut, step-down, ramp, tabs), labels as op ids. Every part keeps its tabs. Tabs go on each part's bottom edge
+   with `profile`'s `"tabs": {"at": [...]}` (added for this; existing jobs are unchanged).
    **Interlocking option** (`"interlock": true`, default off = Reliefwerk's packing). Two lamellas of the
    same length become one packing rectangle: the second turned 180 deg in the sheet plane, its relief
    edge facing down into the first's, ends aligned. The offset between them is the smallest that keeps

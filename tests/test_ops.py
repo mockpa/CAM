@@ -332,6 +332,43 @@ def test_tab_settings_are_checked():
             ops.profile(sq, Tool("e2", 2.0), depth=3, step_down=1, side="on", tabs=spec)
 
 
+def plateaus(tp, z, y):
+    """(x_start, x_end) of the runs of the path at height z along the line Y = y shorter than
+    10 mm: tab tops (a full pass at that height crosses the edge in one run). A set: the last
+    pass goes over its start again, tabs there are crossed twice."""
+    pts = [(round(a, 4), round(b, 4), round(c, 4)) for a, b, c in feed_xy(tp)]
+    return sorted({(min(p[0], q[0]), max(p[0], q[0])) for p, q in zip(pts, pts[1:])
+                   if p[2] == q[2] == z and p[1] == q[1] == y and 0 < abs(p[0] - q[0]) < 10})
+
+
+def test_tabs_at_given_points():
+    # 60 x 20 part cut outside with a 2 mm tool, tabs asked for at two points on the bottom
+    # edge: plateaus (width 2 + tool 2 = 4 mm on the path) centred below them on Y-1, none
+    # anywhere else (a lamella's tabs go on its glued bottom edge, not its visible top)
+    tp = ops.profile(box(0, 0, 60, 20), Tool("e2", 2.0), depth=3, step_down=1,
+                     tabs={"at": [[15, 0], [45, 0.2]], "width": 2, "height": 1})
+    assert plateaus(tp, -2.0, -1.0) == [(13.0, 17.0), (43.0, 47.0)]
+    assert plateaus(tp, -2.0, 21.0) == []
+    deepest = [(x, y) for x, y, z in feed_xy(tp) if z == -3.0]
+    assert any(abs(y - 21) < 1e-9 for x, y in deepest)                   # the top edge is cut through
+
+
+def test_tabs_at_points_go_to_their_own_contour():
+    two = box(0, 0, 30, 10).union(box(40, 0, 70, 10))
+    tp = ops.profile(two, Tool("e2", 2.0), depth=3, step_down=1, tabs={"at": [[55, 0]], "width": 2, "height": 1})
+    assert plateaus(tp, -2.0, -1.0) == [(53.0, 57.0)]                    # the right part only
+
+
+def test_tab_points_are_checked():
+    sq = box(0, 0, 20, 20)
+    bad = [({"at": [[10, -5]], "width": 2, "height": 1}, "not on the edge"),
+           ({"at": [[10, 0], [12, 0]], "width": 2, "height": 1}, "overlap"),
+           ({"at": [[10, 0]], "count": 1, "width": 2, "height": 1}, "exactly one")]
+    for spec, msg in bad:
+        with pytest.raises(ValueError, match=msg):
+            ops.profile(sq, Tool("e2", 2.0), depth=3, step_down=1, tabs=spec)
+
+
 @pytest.mark.parametrize("name", ["cutout", "bracket"])
 def test_example_programs_are_pinned(name):
     ex = Path(__file__).parent.parent / "examples"

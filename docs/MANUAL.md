@@ -201,7 +201,9 @@ and the tool allows it.
 
 **Holding tabs** (profiles): `"tabs": {"count": 4, "width": 6, "height": 1.5}` or `"spacing": 80`
 instead of `count`. `height` is the material left at the bottom. Where a contour is too short or
-fully milled out, camcore adjusts and says so in a `note:`.
+fully milled out, camcore adjusts and says so in a `note:`. To choose where the tabs go, give points
+on the part's edge instead: `"at": [[15, 0], [45, 0]]`. Each tab goes on the nearest contour; a
+point on no contour, or tabs that overlap, are errors.
 
 **Adaptive clearing** (`"method": "adaptive"` on a pocket): the tool keeps the same width of cut
 everywhere instead of slotting on the first loop and overloading in corners, so you can use the
@@ -427,7 +429,7 @@ Every operation: `op`, `tool`, and `shape` / `model` / `points`; optional `id`, 
 
 **profile**: `depth`, `step_down`, `side` (`"outside"`; `"inside"`, `"on"`), `feed` (1000),
 `plunge` (300), `safe_z` (5), `climb` (true), `top_z` (0), `entry` (`"ramp"`), `ramp_angle` (3),
-`tabs` (`{"count" | "spacing", "width", "height", "ramp_angle"}`), `lead_radius`
+`tabs` (`{"count" | "spacing" | "at", "width", "height", "ramp_angle"}`), `lead_radius`
 
 **pocket**: `depth`, `step_down`, `stepover_ratio` (0.4), `method` (`"offset"`; `"adaptive"`),
 `feed` (1000), `plunge` (300), `safe_z` (5), `climb` (true), `top_z` (0), `entry` (`"helix"`; `"ramp"`,

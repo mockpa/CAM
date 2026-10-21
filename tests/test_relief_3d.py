@@ -156,7 +156,7 @@ def test_example_regenerates(tmp_path):
     spec = importlib.util.spec_from_file_location("make_example", REL / "make_example.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    path = mod.main(tmp_path)
+    path = mod.main(tmp_path)[0]
     new, old = json.loads(path.read_text()), json.loads((REL / "waves3d_job.json").read_text())
     new.pop("tool_library"), old.pop("tool_library")           # relative to the output folder
     assert new == old

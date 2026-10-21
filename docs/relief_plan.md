@@ -1,7 +1,7 @@
 # Relief designs (Reliefwerk) in camcore: plan
 
-> **Status:** phases 1-3 (height field, 3D relief job, lamella geometry) done on branch `relief`, and
-> `profile` tabs at given points (for phase 4). Phases 4-7 open.
+> **Status:** phases 1-4 (height field, 3D relief job, lamella geometry, nesting and board jobs) done on
+> branch `relief`, with `profile` tabs at given points. Phases 5-7 open.
 > Source: Paul's Reliefwerk 1.0 (`reliefwerk.zip`: reliefwerk.py, rw_core.py, rw_modes.py, rw_preview.py),
 > reviewed 2026-10-18. Decisions (all defaults taken): Reliefwerk is Paul's own code and may go in the
 > public repo; pins get paperwork only (no back-board job); lamella tabs stay on the bottom edge; the
@@ -55,22 +55,29 @@ camcore jobs. Reliefwerk's own G-code writer is not ported: every program still 
    Reliefwerk's `lam_model` on its example). `profile`'s offset already bridges narrow valleys (no gouge, no
    sliver); `cut_outline` gives that closed outline for nesting and the plans.
 4. **Nesting and sheet jobs** (`relief/nesting.py`, `relief/lamella_job.py`). MaxRects with rotation
-   on/off; spacing = tool diameter + 2 mm web; a sheet beyond machine travel (from the machine JSON) is
-   refused before any toolpath; one job per sheet, `profile` per lamella (outside, depth = thickness +
-   overcut, step-down, ramp, tabs), labels as op ids. Every part keeps its tabs. Tabs go on each part's bottom edge
-   with `profile`'s `"tabs": {"at": [...]}` (added for this; existing jobs are unchanged).
+   on/off; a sheet beyond machine travel or on a fixed obstacle (from the machine JSON) is refused
+   before any toolpath; one job per sheet, `profile` per lamella (outside, depth = thickness + overcut,
+   step-down, ramp, tabs), labels as op ids. Every part keeps its tabs. Tabs go on each part's bottom
+   edge with `profile`'s `"tabs": {"at": [...]}` (added for this; existing jobs are unchanged).
+   **Spacing (changed from this plan's first draft).** "Tool diameter + web" between parts (and
+   Reliefwerk's spacing) lets the cuts of two neighbours meet at the peaks of a wavy top edge, and the
+   scrap in every valley between them is cut free: loose pieces without tabs. Part outlines (as the
+   cutter leaves them) are kept 2 x tool diameter + web apart and tool diameter + web inside the board
+   edge, so the scrap is one connected skeleton nowhere thinner than the web (2 mm default).
    **Interlocking option** (`"interlock": true`, default off = Reliefwerk's packing). Two lamellas of the
    same length become one packing rectangle: the second turned 180 deg in the sheet plane, its relief
    edge facing down into the first's, ends aligned. The offset between them is the smallest that keeps
-   the true 2D distance between the two outlines (shapely, not just vertical) at least tool diameter +
-   web everywhere, ends included, so the scrap web between them stays joined to the sheet at both ends
-   and nothing comes loose. Pairing is greedy: tallest part first, partner = the part that gives the
-   lowest pair height; a pair is only kept when it is lower than the two parts stacked with normal
-   spacing. A 180 deg turn keeps the grain direction, so it is allowed with rotation off. Tabs stay on
+   the true 2D distance between the two outlines (shapely, not just vertical) at least 2 x tool
+   diameter + web everywhere, ends included, the same rule as between any two parts. Pairing is greedy:
+   tallest part first, partner = the part that gives the lowest pair height; a pair is only kept when
+   it is lower than the two parts stacked with normal spacing and fits an empty board (else they go on
+   singly). A 180 deg turn keeps the grain direction, so it is allowed with rotation off. Tabs stay on
    each part's bottom edge, which is on the outside of the pair. *Done when* (in addition to the above)
-   tests pin the pair offset on two known profiles (a ramp and its mirror interlock to tool + web),
-   every interlocked pair keeps the minimum distance, pairs never cost more area than separate parts,
-   and the example design needs no more sheets than without interlocking.
+   tests pin the pair offset on two known profiles (a ramp and its twin interlock at the clearance /
+   cos(slope)), every interlocked pair keeps the minimum distance, pairs never cost more area than
+   separate parts, and the example design needs no more sheets than without interlocking.
+   **Done** (`examples/relief/waves_lam_sheet1_job.json`). `tests/test_relief_sheets.py` replays a board
+   with verify and finds the material left in one piece (parts on their tabs, scrap on the skeleton).
 5. **Pins and paperwork** (`relief/pins.py`, `relief/sheets.py`). Pin grid, levels, cut list, position
    list, pin plan SVG/DXF; parts list and assembly plan for lamellas. CSV totals match the model.
 6. **CLI** (`camcore relief`). Questions through `wizard.Asker` (flags, `--yes`, prompts); output folder

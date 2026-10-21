@@ -127,7 +127,8 @@ def test_parts_keep_their_distance_shape_and_tabs(interlock, bw, bh):
     turned = flipped = 0
     for sh in sheets:
         polys = []
-        for label, pts, tabs in sh.parts:
+        for ob in sh.parts:
+            label, pts, tabs = ob.label, ob.points, ob.tabs
             poly = Polygon(pts)
             part = parts[label]
             assert poly.is_valid and poly.area == pytest.approx(part.outline.area)

@@ -37,7 +37,7 @@ def main(out=HERE):
                       source={"file": "waves.png", **WAVES})
     F = hf.prepare(hf.load(out / "waves.png"), **WAVES_LAM)
     sheets = write_jobs(F, LAM, SHEET, out, "waves_lam", HERE.parent / "tools.json",
-                        source={"file": "waves.png", **WAVES_LAM})
+                        source={"file": "waves.png", **WAVES_LAM}, paperwork=False)
     return [job3d, *sheets]
 
 

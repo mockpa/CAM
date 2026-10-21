@@ -176,10 +176,19 @@ def check_sheet(st: SheetSettings, thickness: float, mdata: dict):
 
 
 @dataclass
+class OnBoard:
+    label: str
+    points: np.ndarray     # outline on the board (counter-clockwise; first two points = bottom edge)
+    tabs: np.ndarray       # tab centres on the board
+    turned: bool           # turned 90 deg (grain across the part)
+    flipped: bool          # turned 180 deg in an interlocked pair
+
+
+@dataclass
 class Sheet:
     index: int
     placed: list           # Placed (item = Box)
-    parts: list            # (label, outline points on the board, tab points on the board)
+    parts: list            # OnBoard, by label
 
 
 def nest(parts: list[Lamella], st: SheetSettings, tool_diameter: float) -> list[Sheet]:
@@ -210,20 +219,26 @@ def nest(parts: list[Lamella], st: SheetSettings, tool_diameter: float) -> list[
             for m in pl.item.unit.members:
                 mat = to_sheet(pl, margin, edge, m)
                 pts = apply(mat, np.asarray(m.part.outline.exterior.coords)[:-1])
-                tabs = apply(mat, [(x, 0.0) for x in tab_points(m.part, st.tabs, half)]) if st.tabs else []
-                rows.append((m.part.label, pts, tabs))
-        rows.sort(key=lambda r: r[0])
+                tabs = apply(mat, [(x, 0.0) for x in tab_points(m.part, st.tabs, half)]) if st.tabs \
+                    else np.zeros((0, 2))
+                rows.append(OnBoard(m.part.label, pts, tabs, pl.turned, m.flipped))
+        rows.sort(key=lambda r: r.label)
         out.append(Sheet(k, placed, rows))
     return out
 
 
-def build_jobs(F: HeightField, ls: LamellaSettings, st: SheetSettings, out_dir, name: str, library_path,
-               material: str | None = "hardwood", machine_path=None, source: dict | None = None) -> list[dict]:
-    """One job per board (paths relative to out_dir)."""
-    from ..check import DEFAULT_MACHINE
-    from ..wizard import portable
+@dataclass
+class Design:
+    parts: list            # Lamella
+    sheets: list           # Sheet
+    tool: dict             # the cutting tool's library entry
+    depth: float           # cut depth
 
-    out = Path(out_dir)
+
+def plan_boards(F: HeightField, ls: LamellaSettings, st: SheetSettings, library_path, machine_path=None) -> Design:
+    """Lamellas laid out on boards, after every check that needs no toolpath."""
+    from ..check import DEFAULT_MACHINE
+
     lib = json.loads(Path(library_path).read_text())
     if st.tool not in lib:
         raise SheetError(f"tool {st.tool!r} is not in the tool library")
@@ -238,11 +253,24 @@ def build_jobs(F: HeightField, ls: LamellaSettings, st: SheetSettings, out_dir, 
     parts = lamellas(F, ls)
     if not parts:
         raise SheetError(f"no lamella {ls.thickness:g} mm thick fits across the artwork")
+    return Design(parts, nest(parts, st, tool["diameter"]), tool, depth)
+
+
+def build_jobs(F: HeightField, ls: LamellaSettings, st: SheetSettings, out_dir, name: str, library_path,
+               material: str | None = "hardwood", machine_path=None, source: dict | None = None,
+               design: Design | None = None) -> list[dict]:
+    """One job per board (paths relative to out_dir)."""
+    from ..wizard import portable
+
+    out = Path(out_dir)
+    d = design or plan_boards(F, ls, st, library_path, machine_path)
+    depth = d.depth
     jobs = []
-    for sh in nest(parts, st, tool["diameter"]):
+    for sh in d.sheets:
         shapes, ops = {}, []
-        for label, pts, tabs in sh.parts:
-            shapes[label] = {"type": "polygon", "points": [[round(x, 4), round(y, 4)] for x, y in pts]}
+        for ob in sh.parts:
+            label, tabs = ob.label, ob.tabs
+            shapes[label] = {"type": "polygon", "points": [[round(x, 4), round(y, 4)] for x, y in ob.points]}
             op = {"id": label, "op": "profile", "shape": label, "tool": st.tool, "side": "outside",
                   "depth": round(depth, 4)}
             if st.step_down is not None:
@@ -283,11 +311,18 @@ def dumps(job: dict) -> str:
 
 
 def write_jobs(F: HeightField, ls: LamellaSettings, st: SheetSettings, out_dir, name: str, library_path,
-               material: str | None = "hardwood", machine_path=None, source: dict | None = None) -> list[Path]:
+               material: str | None = "hardwood", machine_path=None, source: dict | None = None,
+               paperwork: bool = True) -> list[Path]:
+    """Write a job per board, `name`_sheetN_job.json, and (`paperwork`) the parts list,
+    assembly plan and board plans next to them (relief/sheets.py)."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    d = plan_boards(F, ls, st, library_path, machine_path)
+    if paperwork:
+        from .sheets import write_lamella_paperwork
+        write_lamella_paperwork(F, ls, st, d, out, name)
     paths = []
-    for job in build_jobs(F, ls, st, out, name, library_path, material, machine_path, source):
+    for job in build_jobs(F, ls, st, out, name, library_path, material, machine_path, source, d):
         p = out / f"{name}_sheet{job['relief']['sheet_index']}_job.json"
         p.write_text(dumps(job) + "\n")
         paths.append(p)

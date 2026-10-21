@@ -1,7 +1,7 @@
 # Relief designs (Reliefwerk) in camcore: plan
 
-> **Status:** phases 1-4 (height field, 3D relief job, lamella geometry, nesting and board jobs) done on
-> branch `relief`, with `profile` tabs at given points. Phases 5-7 open.
+> **Status:** phases 1-5 (height field, 3D relief job, lamella geometry, nesting and board jobs, pins and
+> paperwork) done on branch `relief`, with `profile` tabs at given points. Phases 6-7 open.
 > Source: Paul's Reliefwerk 1.0 (`reliefwerk.zip`: reliefwerk.py, rw_core.py, rw_modes.py, rw_preview.py),
 > reviewed 2026-10-18. Decisions (all defaults taken): Reliefwerk is Paul's own code and may go in the
 > public repo; pins get paperwork only (no back-board job); lamella tabs stay on the bottom edge; the
@@ -49,6 +49,9 @@ camcore jobs. Reliefwerk's own G-code writer is not ported: every program still 
    Measure OpenCAMLib time on 600 x 400 mm at 0.5 mm. **Done** (`relief/relief3d.py`, example `examples/relief/waves3d_job.json`).
    Found on the way: `surface._check_loop` refused correct waterline contours at hairpin tips (it probed
    across the contour); it now tests the cutter shrunk and grown by 0.01 mm at the point itself.
+   **Measured:** 300 x 200 mm, 15 mm deep, model grid 0.5 mm, em6 + ball3 on hardwood: 35.5 min and 3.0 GB
+   for the toolpaths (roughing 520 000 moves, finishing 250 000); the 110 x 70 mm example takes 50 s.
+   600 x 400 mm would be about 2.5 h and over 10 GB: too slow for the app's Preview. Still open (see Risks).
 3. **Lamella geometry** (`relief/lamella.py`). Strips (direction, thickness, gap, base, relief height,
    profile step, averaging over thickness); each a valid polygon simplified within 0.02 mm; valleys
    narrower than the cutter filled so `profile` leaves no sliver. **Done** (`relief/lamella.py`; identical to
@@ -79,7 +82,10 @@ camcore jobs. Reliefwerk's own G-code writer is not ported: every program still 
    **Done** (`examples/relief/waves_lam_sheet1_job.json`). `tests/test_relief_sheets.py` replays a board
    with verify and finds the material left in one piece (parts on their tabs, scrap on the skeleton).
 5. **Pins and paperwork** (`relief/pins.py`, `relief/sheets.py`). Pin grid, levels, cut list, position
-   list, pin plan SVG/DXF; parts list and assembly plan for lamellas. CSV totals match the model.
+   list, pin plan SVG/DXF; parts list and assembly plan for lamellas. CSV totals match the model. **Done**:
+   pin grids identical to Reliefwerk's `pin_model` (all shapes, levels and stepless); lamella paperwork
+   (`NAME_parts.csv`, `NAME_assembly.svg`, `NAME_boardN.svg/.dxf`) written by `lamella_job.write_jobs`; a dot
+   marks each lamella's start on the board and assembly plans. DXF via ezdxf.
 6. **CLI** (`camcore relief`). Questions through `wizard.Asker` (flags, `--yes`, prompts); output folder
    with jobs, STL/DXF, paperwork, then `check.check` on every job; `--no-sim`. Scripted-input tests for
    all three modes.
@@ -94,7 +100,8 @@ Regression guards: the byte-for-byte fixtures stay, `verify` imports nothing fro
 Reliefwerk's known failures (1200 mm sheet, finishing without roughing, straight plunge) are tested.
 
 ## Risks
-- OpenCAMLib on a large relief is slow: decimate the STL to the finishing tolerance, tile by `boundary`.
+- OpenCAMLib on a large relief is slow (measured in phase 2: 35 min / 3 GB for 300 x 200 mm): decimate the
+  STL to the finishing tolerance, tile by `boundary`, and look at why roughing makes 520 000 moves.
 - Machine values are provisional: the sheet limit always comes from the machine JSON.
 - Many lamellas per sheet crowd the app's op list: group profiles per op if `profile` allows it.
 - Tabs on the glued bottom edge: keep them and say "sand flush" in the paperwork.

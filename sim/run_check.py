@@ -57,8 +57,12 @@ c.maxvel(1e9)
 c.auto(linuxcnc.AUTO_RUN, 0)
 
 errors, started, t0 = [], False, time.time()
+shown = t0
 while True:
     s.poll()
+    if time.time() - shown > 2:               # camcore check reads these for its progress display
+        shown = time.time()
+        print(f"CAMCORE-PROGRESS line {s.motion_line}", flush=True)   # current_line runs ahead
     err = e.poll()
     if err:
         kind, text = err

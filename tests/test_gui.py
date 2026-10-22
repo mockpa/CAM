@@ -134,14 +134,14 @@ def test_preview_saves_first(qtbot, window, ex):
 
 def test_export_writes_the_program_only_if_the_sim_passes(qtbot, window, ex, monkeypatch):
     w = window(ex / "cutout_job.json")
-    monkeypatch.setattr(camcore.check, "run_sim", lambda *a: (False, "LinuxCNC: joint 0 out of range"))
+    monkeypatch.setattr(camcore.check, "run_sim", lambda *a, **k: (False, "LinuxCNC: joint 0 out of range"))
     ok, view, exported = run_check(qtbot, w, w.export)
     assert not ok and not view
     assert not (ex / "out" / "cutout.ngc").exists() and (ex / "out" / "cutout_report.txt").exists()
     assert "joint 0 out of range" in w.report.toPlainText()
     assert w.statusBar().currentMessage().startswith("FAILED")
 
-    monkeypatch.setattr(camcore.check, "run_sim", lambda *a: (True, "ran to the end"))
+    monkeypatch.setattr(camcore.check, "run_sim", lambda *a, **k: (True, "ran to the end"))
     w.last_result = None
     ok, view, exported = run_check(qtbot, w, w.export)
     assert ok and exported and (ex / "out" / "cutout.ngc").exists()
@@ -351,6 +351,27 @@ def test_relief_from_the_main_window_checks_every_board(qtbot, window, tmp_path)
     assert w.project.path == (tmp_path / "out" / "waves_sheet1_job.json").resolve()
     assert (tmp_path / "out" / "waves_sheet1.ngc").exists() and (tmp_path / "out" / "waves_sheet2.ngc").exists()
     assert Path(view) == tmp_path / "out" / "waves_sheet2_view.html"
+
+
+def test_relief_status_shows_the_board_and_the_sim_line(qtbot, window, tmp_path, monkeypatch):
+    def fake_sim(gcode, *a, progress=None, **k):
+        progress(7)
+        return True, "ran to the end"
+    monkeypatch.setattr(camcore.check, "run_sim", fake_sim)
+    w = window()
+    shown = []
+    w.statusBar().messageChanged.connect(shown.append)
+    d = ReliefDialog(PNG, tmp_path / "out")
+    qtbot.addWidget(d)
+    fill(qtbot, d, SMALL)
+    d.sim.setChecked(True)
+    d.exec = lambda: (d.accept(), 1)[1]
+    ok, *_ = run_check(qtbot, w, lambda: w.run_relief(d))
+    assert ok, w.report.toPlainText()
+    total = len((tmp_path / "out" / "waves_sheet2.ngc").read_text().splitlines())
+    assert "board 1 of 2: checking with the LinuxCNC sim…" in shown
+    assert f"board 2 of 2: LinuxCNC sim, line 7 / {total} ({round(700 / total)} %)" in shown
+    assert w.statusBar().currentMessage().startswith("Exported")
 
 
 def test_relief_pins_from_the_main_window(qtbot, window, tmp_path, monkeypatch):

@@ -20,9 +20,11 @@ from ..check import check
 
 class CheckRunner(QObject):
     """check.check(job, out_dir, sim=...) in a worker thread. `line` carries the
-    log, `finished(ok, view_html)` the result: the viewer path only if it passed."""
+    log, `progress(line, total)` the LinuxCNC sim's place in the program, `finished(ok,
+    view_html)` the result: the viewer path only if it passed."""
 
     line = Signal(str)
+    progress = Signal(int, int)
     finished = Signal(bool, str)
 
     def __init__(self, parent=None):
@@ -58,7 +60,7 @@ class CheckRunner(QObject):
 
     def _run(self, job_path, out_dir, sim, machine):
         try:
-            ok = check(job_path, out_dir, machine, sim=sim, log=self.line.emit)
+            ok = check(job_path, out_dir, machine, sim=sim, log=self.line.emit, progress=self.progress.emit)
         except Exception:                     # noqa: BLE001 - show it in the report, never kill the app
             self.line.emit(traceback.format_exc())
             ok = False

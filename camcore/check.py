@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 from .body import scene
@@ -24,6 +26,8 @@ from .verify import Machine, machine_from_library, run
 
 DEFAULT_MACHINE = Path(__file__).resolve().parent.parent / "machine" / "printnc_provisional.json"
 SIM_IMAGE = "camcore-sim"
+SIM_TIMEOUT = 3 * 3600                        # s
+PROGRESS = re.compile(r"CAMCORE-PROGRESS line (\d+)\s*$")   # printed by sim/run_check.py every 2 s
 
 
 def job_library(job: dict, base: Path) -> dict:
@@ -50,9 +54,10 @@ def sim_tool_table(mdata: dict, machine_path: Path, library: dict) -> str:
 
 
 def run_sim(gcode: str, mdata: dict, machine_path: Path, library: dict, image: str,
-            work_offset: dict | None = None) -> tuple[bool, str]:
+            work_offset: dict | None = None, progress=None) -> tuple[bool, str]:
     """Run the program through LinuxCNC in the sim container, with G54 at `work_offset`
-    (default: the machine JSON's). Returns (ok, log)."""
+    (default: the machine JSON's). Returns (ok, log). `progress(line)` is called with
+    the program line the sim has reached as it runs; those lines stay out of the log."""
     if shutil.which("docker") is None:
         return False, "docker not found (install it, or use --no-sim for a quick iteration)"
     sim = mdata.get("sim")
@@ -65,20 +70,33 @@ def run_sim(gcode: str, mdata: dict, machine_path: Path, library: dict, image: s
         shutil.copy(machine_path.parent / sim["ini"], work / "machine.ini")
         (work / "machine.var").write_text(sim_var(work_offset or mdata["work_offset"]))
         (work / "tool.tbl").write_text(sim_tool_table(mdata, machine_path, library))
+        p = subprocess.Popen(["docker", "run", "--rm", "-v", f"{work}:/work", image, "check", "/work/program.ngc"],
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        timed_out = threading.Event()
+        timer = threading.Timer(SIM_TIMEOUT, lambda: (timed_out.set(), p.kill()))
+        timer.start()
+        out = []
         try:
-            p = subprocess.run(["docker", "run", "--rm", "-v", f"{work}:/work", image,
-                                "check", "/work/program.ngc"],
-                               capture_output=True, text=True, timeout=3 * 3600)
-        except subprocess.TimeoutExpired:
+            for line in p.stdout:
+                m = PROGRESS.match(line)
+                if not m:
+                    out.append(line)
+                elif progress is not None:
+                    progress(int(m[1]))
+            p.wait()
+        finally:
+            timer.cancel()
+        if timed_out.is_set():
             return False, "LinuxCNC sim timed out after 3 h"
-    log = (p.stdout + p.stderr).strip()
+    log = "".join(out).strip()
     if "Unable to find image" in log or "pull access denied" in log:
         log += f"\n\nBuild the sim image first: cd sim && docker build -t {image} ."
     return p.returncode == 0, log
 
 
 def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: str = SIM_IMAGE,
-          log=print) -> bool:
+          log=print, progress=None) -> bool:
+    """`progress(line, total)`, if given, follows the LinuxCNC sim through the program."""
     job_path = Path(job_path)
     name = job_path.stem.removesuffix("_job")
     out = Path(out_dir)
@@ -138,7 +156,9 @@ def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: s
 
     if ok and sim:
         log("running the LinuxCNC sim (a few minutes for ~10000 moves)...")
-        sim_ok, sim_log = run_sim(gcode, mdata, machine_path, library, image, machine.offset_for(stock))
+        total = len(gcode.splitlines())
+        sim_ok, sim_log = run_sim(gcode, mdata, machine_path, library, image, machine.offset_for(stock),
+                                  progress=(lambda n: progress(n, total)) if progress else None)
         lines.append("LinuxCNC sim: " + ("OK" if sim_ok else "FAILED"))
         lines += [f"  {s}" for s in sim_log.splitlines()]
         if not sim_ok:

@@ -35,22 +35,53 @@ def test_real_tool_table(tmp_path):
     assert [i.message for i in issues] == ["T5 is not in the controller's tool.tbl"]
 
 
-def test_sim_uses_the_real_tool_table(tmp_path, monkeypatch):
-    import subprocess
+class FakeDocker:
+    """subprocess.Popen stand-in for `docker run ... camcore-sim check`: prints `out`."""
+    def __init__(self, out, code=0, seen=None):
+        self.out, self.code, self.seen = out, code, seen if seen is not None else {}
+
+    def __call__(self, cmd, **kw):
+        work = Path(cmd[cmd.index("-v") + 1].split(":")[0])
+        self.seen["tbl"] = (work / "tool.tbl").read_text()
+        self.stdout = iter(self.out.splitlines(keepends=True))
+        self.returncode = self.code
+        return self
+
+    def wait(self):
+        return self.code
+
+    def kill(self):
+        pass
+
+
+def sim_setup(tmp_path, monkeypatch, fake):
     from camcore import check
     (tmp_path / "tool.tbl").write_text("T1 P1 D3.175 ;real\n")
     (tmp_path / "sim.ini").write_text("[EMC]\n")
-    mdata = {"work_offset": {"x": 0, "y": 0, "z": 0}, "sim": {"ini": "sim.ini"}, "tool_table": "tool.tbl"}
-    seen = {}
-
-    def fake_run(cmd, **kw):
-        work = Path(cmd[cmd.index("-v") + 1].split(":")[0])
-        seen["tbl"] = (work / "tool.tbl").read_text()
-        return subprocess.CompletedProcess(cmd, 0, "OK", "")
-    monkeypatch.setattr(check.subprocess, "run", fake_run)
+    monkeypatch.setattr(check.subprocess, "Popen", fake)
     monkeypatch.setattr(check.shutil, "which", lambda name: "/usr/bin/docker")
+    return {"work_offset": {"x": 0, "y": 0, "z": 0}, "sim": {"ini": "sim.ini"}, "tool_table": "tool.tbl"}
+
+
+def test_sim_uses_the_real_tool_table(tmp_path, monkeypatch):
+    from camcore import check
+    fake = FakeDocker("OK\n")
+    mdata = sim_setup(tmp_path, monkeypatch, fake)
     ok, _ = check.run_sim("M2\n", mdata, tmp_path / "m.json", {"x": {"number": 4, "diameter": 1}}, "img")
-    assert ok and seen["tbl"] == "T1 P1 D3.175 ;real\n"
+    assert ok and fake.seen["tbl"] == "T1 P1 D3.175 ;real\n"
+
+
+def test_sim_progress_lines_go_to_the_callback_not_the_log(tmp_path, monkeypatch):
+    from camcore import check
+    out = ("CAMCORE-PROGRESS line 1\nlinuxcnc: tool changed\nCAMCORE-PROGRESS line 40\n"
+           "line 52, 3 s simulated run, FAILED\n")
+    mdata = sim_setup(tmp_path, monkeypatch, FakeDocker(out, code=1))
+    seen = []
+    ok, log = check.run_sim("M2\n", mdata, tmp_path / "m.json", {}, "img", progress=seen.append)
+    assert not ok and seen == [1, 40]
+    assert log == "linuxcnc: tool changed\nline 52, 3 s simulated run, FAILED"
+    ok, log = check.run_sim("M2\n", mdata, tmp_path / "m.json", {}, "img")      # no callback: still left out
+    assert "PROGRESS" not in log
 
 
 # --- jobs: materials and ordering --------------------------------------------

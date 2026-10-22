@@ -69,6 +69,8 @@ class MainWindow(QMainWindow):
         self.runner = CheckRunner(self)
         self.runner.line.connect(self._log)
         self.runner.finished.connect(self._finished)
+        self.runner.progress.connect(self._progress)
+        self._board, self._boards = 1, 0    # relief: which board of how many is being checked
         self.out_dir_custom = None
         self.last_result = None             # (ok, viewer path, exported) of the last check
 
@@ -303,8 +305,15 @@ class MainWindow(QMainWindow):
         self.right.setCurrentWidget(self.report)
         self.a_preview.setEnabled(False)
         self.a_export.setEnabled(False)
-        self.statusBar().showMessage("checking…" if not sim else "checking with the LinuxCNC sim…")
+        self.statusBar().showMessage(self._which() + ("checking…" if not sim else "checking with the LinuxCNC sim…"))
         self.runner.start(job_path or self.project.path, out_dir, sim)
+
+    def _which(self) -> str:
+        return f"board {self._board} of {self._boards}: " if self._boards > 1 else ""
+
+    def _progress(self, line: int, total: int):
+        pct = min(100, round(100 * line / total)) if total else 0
+        self.statusBar().showMessage(f"{self._which()}LinuxCNC sim, line {line} / {total} ({pct} %)")
 
     def _log(self, line: str):
         self.report.appendPlainText(line)
@@ -312,9 +321,11 @@ class MainWindow(QMainWindow):
     def _finished(self, ok: bool, view: str):
         queue = getattr(self, "_queue", [])
         if ok and queue:                    # more relief boards to check: the next one, same settings
+            self._board += 1
             self._start(self._queue_out, self._exporting, queue.pop(0))
             return
-        self._queue = []
+        which = self._which()
+        self._queue, self._board, self._boards = [], 1, 0
         self.a_preview.setEnabled(True)
         self.a_export.setEnabled(True)
         self.last_result = (ok, view, self._exporting)
@@ -324,7 +335,7 @@ class MainWindow(QMainWindow):
             self.right.setCurrentWidget(self.viewer)
             self.statusBar().showMessage(what)
         else:
-            self.statusBar().showMessage("FAILED: see the report")
+            self.statusBar().showMessage(which + "FAILED: see the report")
 
     def wizard(self):
         from .wizard_dialog import WizardDialog
@@ -366,8 +377,7 @@ class MainWindow(QMainWindow):
         self.out_dir_custom = str(dialog.out_dir)
         self.out_edit.setText(self.out_dir_custom)
         self._queue, self._queue_out = list(dialog.jobs[1:]), dialog.out_dir
-        if self._queue:
-            self.statusBar().showMessage(f"{len(dialog.jobs)} boards: checking them one after another")
+        self._board, self._boards = 1, len(dialog.jobs)
         self._start(dialog.out_dir, sim=dialog.sim.isChecked(), job_path=dialog.jobs[0])
         return True
 

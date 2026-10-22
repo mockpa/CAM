@@ -4,6 +4,9 @@ camcore turns a description of a part (a **job**) into a LinuxCNC program for th
 proves on the way that the program is safe to run. This manual walks through the work in the order
 you do it; the [job file reference](#9-job-file-reference) at the end lists every key.
 
+Prefer to learn by doing? The [tutorials](tutorials/README.md) walk through every workflow step by
+step, with screenshots.
+
 Contents
 1. [How camcore works](#1-how-camcore-works)
 2. [Setup](#2-setup)

@@ -224,30 +224,50 @@ if (S) {
   }
   grid = { nx, ny, x0, y0, res, base, h0, h: h0.slice(), dirty: false };
   const g = new THREE.BufferGeometry();
-  const pos = new Float32Array(nx * ny * 3), colr = new Float32Array(nx * ny * 3), index = [];
-  for (let i = 0; i < nx - 1; i++) for (let j = 0; j < ny - 1 + (rotary ? 1 : 0); j++) {
-    const jn = (j + 1) % ny, a = i * ny + j, b = (i + 1) * ny + j, c = (i + 1) * ny + jn, d = i * ny + jn;
-    index.push(a, b, d, b, c, d);
-  }
-  g.setIndex(index);
+  const pos = new Float32Array(nx * ny * 3), colr = new Float32Array(nx * ny * 3);
+  grid.floor = rotary ? null : S.z[0];
+  grid.through = 0;                                   // corners cut down to the stock bottom
+  g.setIndex(stockIndex(nx, ny, grid.h, grid.floor, rotary));
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   g.setAttribute("color", new THREE.BufferAttribute(colr, 3));
   stockMesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
   stockGroup.add(stockMesh);
-  if (!rotary) {   // the block's sides and bottom as a faint box
+  if (!rotary) {   // the block's sides as a faint box, open at the bottom so holes cut through show
+    const side = new THREE.MeshLambertMaterial({ color: col("--stock"), transparent: true, opacity: 0.25, depthWrite: false });
+    const none = new THREE.MeshBasicMaterial({ visible: false });
     const bx = new THREE.Mesh(new THREE.BoxGeometry(S.x[1] - S.x[0], S.y[1] - S.y[0], S.z[1] - S.z[0]),
-      new THREE.MeshLambertMaterial({ color: col("--stock"), transparent: true, opacity: 0.25, depthWrite: false }));
+      [side, side, side, side, none, none]);   // faces +x -x +y -y +z -z
     bx.position.set((S.x[0] + S.x[1]) / 2, (S.y[0] + S.y[1]) / 2, (S.z[0] + S.z[1]) / 2 - 0.05);
     stockGroup.add(bx);
   }
   refreshStock(true);
 }
+// Triangles of the stock surface. A cell cut through the whole block (all four corners at or
+// below the stock bottom) is left out, so it shows as a hole and not as a floor.
+function stockIndex(nx, ny, h, floor, wrap) {
+  const index = [];
+  const out = k => floor !== null && h[k] <= floor + 1e-6;
+  for (let i = 0; i < nx - 1; i++) for (let j = 0; j < ny - 1 + (wrap ? 1 : 0); j++) {
+    const jn = (j + 1) % ny, a = i * ny + j, b = (i + 1) * ny + j, c = (i + 1) * ny + jn, d = i * ny + jn;
+    if (out(a) && out(b) && out(c) && out(d)) continue;
+    index.push(a, b, d, b, c, d);
+  }
+  return index;
+}
 function refreshStock() {
   if (!grid) return;
+  if (grid.floor !== null) {
+    let through = 0;
+    for (let k = 0; k < grid.h.length; k++) if (grid.h[k] <= grid.floor + 1e-6) through++;
+    if (through !== grid.through) {
+      grid.through = through;
+      stockMesh.geometry.setIndex(stockIndex(grid.nx, grid.ny, grid.h, grid.floor, false));
+    }
+  }
   const { nx, ny, x0, y0, res, base, h } = grid;
   const pos = stockMesh.geometry.attributes.position.array, c = stockMesh.geometry.attributes.color.array;
   const top = col("--stock"), deep = col("--stock-cut");
-  const span = rotary ? base * 0.5 : Math.max(1, (S.z[1] - S.z[0]) * 0.5);
+  const span = rotary ? base * 0.5 : Math.max(1, S.z[1] - S.z[0]);   // flat: shade over the full thickness
   for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
     const k = i * ny + j, v = h[k], o = k * 3;
     if (rotary) { const a = j / ny * 2 * Math.PI; pos[o] = x0 + i * res; pos[o + 1] = -v * Math.sin(a); pos[o + 2] = v * Math.cos(a); }

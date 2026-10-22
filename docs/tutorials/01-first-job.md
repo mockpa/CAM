@@ -86,6 +86,10 @@ and the list of problems (here: none).
 
 ![The finished stock without toolpaths](img/first_viewer_stock.png)
 
+The deeper a cut, the darker it is, down to the bottom of the stock. Where a cut goes all the way
+through (the outside profile here), the viewer shows a hole: look straight down to see through a narrow
+slot. Tabs left in such a slot show up as places where it is closed.
+
 ## Step 5: change something
 
 Make a copy so the example stays as it is, and edit the copy:

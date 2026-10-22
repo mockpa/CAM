@@ -171,6 +171,9 @@ Typical loop: change a value, Ctrl+R, look, repeat; Export once at the end.
 }
 ```
 
+- **Placement:** a drawing keeps its own coordinates unless `fit_origin` moves its lower-left corner.
+  SVG Y runs downwards, so without it an SVG lands below Y0, off the stock: the check refuses that and
+  suggests a `fit_origin`. The app's import sets one that centres the drawing on the stock.
 - **Closed contours only.** Nested contours become holes (a ring, a letter O). DXF pieces are joined
   end to end within `join_tolerance` (0.01 mm); a contour that still does not close is an error that
   says where. `"ignore_open": true` skips open pieces instead.
@@ -263,6 +266,11 @@ floor. The V-bit must cut `pocket_depth - glue_gap + surface_gap` deep at its fu
 - **Plug board**: by default the flange is cleared over the whole board (`clear_tool` runs off its
   edges), so nothing needs trimming. With `"plug_margin": 10` only 10 mm around the design is cleared.
   Trim the board inside that flange before gluing (the report says so).
+- **Narrow areas**: wherever the pocket floor or the plug's flange is too narrow or too tight a corner
+  for `clear_tool` (thin letter strokes, gaps between letters), the V-bit cuts it flat with its tip in
+  close passes, leaving ridges of at most 0.1 mm. The report says how much area that is (`the V-bit cuts
+  N mm2 of flat floor that em3 cannot reach`). On fine lettering that can be most of the floor and take
+  a while; a smaller clear tool shortens it.
 - **Corners**: the default `"method": "medial"` (centre-cutting V-bit, plunges) gives sharp corners on
   both parts. `"offset"` rounds sharp corners off, which keeps the plug from seating.
 - **The fit check**: with `"fit_with"` on the plug, `camcore check` simulates both programs, turns the
@@ -485,7 +493,7 @@ Every operation: `op`, `tool`, and `shape` / `model` / `points`; optional `id`, 
 
 **profile**: `depth`, `step_down`, `side` (`"outside"`; `"inside"`, `"on"`), `feed` (1000),
 `plunge` (300), `safe_z` (5), `climb` (true), `top_z` (0), `entry` (`"ramp"`), `ramp_angle` (3),
-`tabs` (`{"count" | "spacing" | "at", "width", "height", "ramp_angle"}`), `lead_radius`
+`tabs` (`{"count" | "spacing" | "at", "width", "height", "ramp_angle"}`; `height` above the bottom of the cut, so add any overcut), `lead_radius`
 
 **pocket**: `depth`, `step_down`, `stepover_ratio` (0.4), `method` (`"offset"`; `"adaptive"`),
 `feed` (1000), `plunge` (300), `safe_z` (5), `climb` (true), `top_z` (0), `entry` (`"helix"`; `"ramp"`,
@@ -567,6 +575,7 @@ tool's `gauge_length`.
 
 | Message | What to do |
 |---|---|
+| `shape ... is completely off the stock` | set the shape's `fit_origin` (the message suggests one); a part off the stock is a note |
 | `COLLISION: collet nut hits chuck ...` | more stock out of the jaws (lower `x[0]` or `chuck_hold`), a longer tool (`gauge_length`), or keep the cut further from the chuck |
 | `COLLISION: ... hits the stock` | the spindle comes down beside a deep cut: use a longer tool or cut less deep |
 | `rotary stock has no "chuck_hold"` | add it to the stock (mm held in the jaws) |

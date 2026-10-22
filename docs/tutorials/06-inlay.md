@@ -37,7 +37,10 @@ The plug job (insert board, 120 x 80 x 12 mm) differs in the stock, `part` and `
   - `glue_gap`: room for glue between the plug face and the pocket floor (0.5 mm).
   - `surface_gap`: the plug's flange stays this far above the base surface (1.5 mm), so clamp
     pressure goes into the walls, not the floor.
-- **`clear_tool`** clears the pocket floor and the plug's flange flat.
+- **`clear_tool`** clears the pocket floor and the plug's flange flat. Where it does not fit (thin
+  strokes, gaps between letters), the V-bit cuts those flat areas itself. An inlay always needs one. In the
+  app it is the **Clear tool** field right under **Shape** in the operation's form, and **Fit with**
+  below it names the pocket job on the plug.
 - The V-bit must reach `pocket_depth - glue_gap + surface_gap` (here 6 mm) at its full diameter, or the
   job is refused.
 

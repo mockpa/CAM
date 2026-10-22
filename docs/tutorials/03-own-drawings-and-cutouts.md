@@ -31,8 +31,12 @@ basic shapes, transforms). Before you export:
 sits 10 mm in from the stock's front-left corner. Each layer has its own lower-left corner, so the
 recess gets its own `fit_origin` to land where it is in the drawing.
 
-In the app: **Shapes & models → SVG / DXF…**, pick the file, then set `layers` and `fit_origin` in the
-JSON box.
+Without `fit_origin` a drawing keeps its own coordinates. SVG counts Y downwards, so an SVG then
+lands below the stock and the check stops with "shape ... is completely off the stock" and a
+suggested `fit_origin`.
+
+In the app: **Shapes & models → SVG / DXF…**, pick the file. The app sets a `fit_origin` that centres
+the drawing on the stock; change it and set `layers` in the JSON box.
 
 ## Step 3: the operations
 
@@ -49,7 +53,9 @@ JSON box.
   aluminium data for `em3`. Nothing else needs to be set.
 - **`depth: 6.3`** goes 0.3 mm past the 6 mm stock so the part comes free cleanly.
 - **`lead_radius: 3`** starts each pass on a small arc in the waste, so there is no mark on the part edge.
-- **`tabs`**: three tabs, 5 mm wide, 1 mm high, left standing to hold the part until you cut it free.
+- **`tabs`**: three tabs, 5 mm wide, left standing to hold the part until you cut it free. The `height`
+  counts from the bottom of the cut, not from the bottom of the stock: cut to 6.3 mm in 6 mm stock, a
+  1 mm tab is 0.7 mm of material. Add the overcut to the height you want.
 
 Look at the plan from above without running a check:
 

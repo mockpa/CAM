@@ -67,6 +67,7 @@ again after each fix rather than changing several things at once.
 
 | Message | Usual cause and fix |
 |---|---|
+| `shape ... is completely off the stock` | the drawing keeps its own coordinates: set `fit_origin` on the shape (the message suggests one that centres it) |
 | `CRASH: rapid move into material` | `safe_z` too low, or an operation's `top_z` below where the material really starts |
 | `... is outside machine travel` | the part does not fit where G54 puts it; on rotary jobs the swing may be too large |
 | `T.. plunges into material but is not marked center_cutting` | use `"entry": "ramp"` or `"helix"`, or mark the tool `center_cutting` if it really is |

@@ -27,8 +27,9 @@ The window has two halves:
 
 1. In the **Operations** tab, click **#2: vcarve art with v60**. Its form opens below the list.
 2. Look at the **Parameters**. Fields with black text are set in the job. **Grey** text in an empty field
-   is the value the operation gets anyway. Hover over it to see where from: the tool library's data for
-   the job's material, the job's `defaults`, or the operation's built-in default.
+   is the value the operation gets anyway. **Hover** over a parameter to see what it does and where the
+   grey value comes from: the tool library's data for the job's material, the job's `defaults`, or the
+   operation's built-in default. Buttons, tabs and the job settings explain themselves the same way.
 3. Change **max_depth** from `3` to `2.5`. The window title gets a `*`: the job has unsaved changes.
 
 To build the cutting order:
@@ -71,7 +72,8 @@ The usual loop: change a value, Ctrl+R, look, repeat.
 ![The Shapes & models tab with the SVG drawing selected](img/app_shapes.png)
 
 - **Rectangle**, **Circle**: add a shape and edit its numbers in the JSON box below the list.
-- **SVG / DXF…**: import a drawing ([tutorial 3](03-own-drawings-and-cutouts.md)).
+- **SVG / DXF…**: import a drawing ([tutorial 3](03-own-drawings-and-cutouts.md)). It is placed in
+  the middle of the stock (`fit_origin` in the JSON box); move it by changing those numbers.
 - **STL model…**: add a 3D model for 3D or rotary operations ([tutorials 7](07-3d-from-stl.md) and
   [10](10-rotary-from-stl.md)).
 - **Rename…** also renames the shape in every operation that uses it.

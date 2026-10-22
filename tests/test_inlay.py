@@ -196,6 +196,23 @@ def test_inlay_needs_a_clear_tool():
         run_job(job, EX)
 
 
+def test_a_clear_pass_with_nothing_the_clear_tool_fits_is_left_out(tmp_path):
+    # 8 mm slot, 5 mm deep: the V-bit leaves a flat strip 8 - 2 * 5 * tan 30 = 2.2 mm
+    # wide, narrower than em3. The empty pass used to put out a tool change and a
+    # Z move with no X Y, which verify refuses.
+    job = {"tool_library": str(EX / "tools.json"), "stock": {"type": "box", "x": [0, 50], "y": [0, 50], "z": [-9, 0]},
+           "shapes": {"a": {"type": "rect", "x": 10, "y": 10, "w": 8, "h": 30}},
+           "operations": [{"op": "inlay", "shape": "a", "tool": "v60", "clear_tool": "em3", "pocket_depth": 5}]}
+    region, _ = ops.inlay_clear_area(build_shape(job["shapes"]["a"], EX), V60, EM3, part="pocket", pocket_depth=5)
+    assert not region.is_empty
+    paths = run_job(job, EX)
+    assert [tp.name for tp in paths] == ["inlay"]
+    assert any("em3" in n and "nothing to clear" in n for n in paths[0].notes)
+    path = tmp_path / "slot_job.json"
+    path.write_text(json.dumps(job))
+    assert check(path, tmp_path / "out", sim=False, log=lambda s: None)
+
+
 @pytest.mark.parametrize("part", ["pocket", "plug"])
 def test_example_fixtures_regenerate_and_verify_clean(part):
     from camcore.job import job_to_gcode

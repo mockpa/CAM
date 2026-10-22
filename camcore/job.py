@@ -236,6 +236,7 @@ def _inlay(shape, tool, spec, clear, clear_args, tools, job, params, rpm, op_id,
     if spec.get("part", "pocket") == "plug" and "stock" not in spec:
         spec["stock"] = job.get("stock")
     region, depth = ops.inlay_clear_area(shape, tool, tools[clear], **spec)
+    ct = None
     if not region.is_empty:
         cargs = params(ops.pocket, clear, {"top_z": spec.get("top_z", 0.0), "safe_z": spec.get("safe_z", 5.0),
                                            **clear_args})
@@ -243,8 +244,13 @@ def _inlay(shape, tool, spec, clear, clear_args, tools, job, params, rpm, op_id,
         crpm = cargs.pop("rpm", rpm)
         ct = ops.pocket(region, tools[clear], depth, name="inlay-clear", **cargs)
         ct.spindle_rpm = crpm
+    tp = ops.inlay(shape, tool, **spec)
+    if ct is not None and any(m.kind == "feed" for m in ct.moves):
         mine.append([ct, f"{op_id}:clear", set(after)])
-    return ops.inlay(shape, tool, **spec)
+    elif ct is not None:
+        # flat areas narrower than the clear tool: an empty pass would still change tools
+        tp.notes = ct.notes + [f"{op_id}: nothing to clear that {clear} fits into, clear pass left out"] + tp.notes
+    return tp
 
 
 def index_nodes(passes, angles, stock, face_z, clearance):

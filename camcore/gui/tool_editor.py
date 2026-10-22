@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel, QPushButton,
                                QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
+from ..tooltips import CUTTING_TIPS, TOOL_TIPS
 from ..project import CUTTING_KEYS, TOOL_KINDS, format_value, parse_value, save_library, tool_fields, unique_name
 
 
@@ -23,10 +24,16 @@ class ToolEditor(QWidget):
         self.title = QLabel()
         v.addWidget(self.title)
         bar = QHBoxLayout()
-        for label, fn in [("Add tool", self.add_tool), ("Remove tool", self.remove_tool),
-                          ("Add material", self.add_material), ("Remove material", self.remove_material),
-                          ("Save library", self.save), ("Revert", self.revert)]:
+        for label, fn, tip in [
+                ("Add tool", self.add_tool, "Add a tool in the next free ATC pocket"),
+                ("Remove tool", self.remove_tool, "Delete the selected tool"),
+                ("Add material", self.add_material, "Add feeds and speeds for a material to the selected tool"),
+                ("Remove material", self.remove_material, "Delete the selected material row"),
+                ("Save library", self.save, "Write the library file (only if it passes the checks); every job "
+                                            "that names it uses the change"),
+                ("Revert", self.revert, "Throw away unsaved changes and reload the file")]:
             b = QPushButton(label)
+            b.setToolTip(tip)
             b.clicked.connect(fn)
             bar.addWidget(b)
         bar.addStretch()
@@ -35,6 +42,8 @@ class ToolEditor(QWidget):
         split = QSplitter(Qt.Vertical)
         self.tools = QTableWidget(0, 1 + len(self.fields))
         self.tools.setHorizontalHeaderLabels(["name"] + [f.name for f in self.fields])
+        for c, key in enumerate(["name"] + [f.name for f in self.fields]):
+            self.tools.horizontalHeaderItem(c).setToolTip(TOOL_TIPS.get(key, ""))
         self.tools.currentCellChanged.connect(lambda r, *_: self._show_cutting(r))
         self.tools.itemChanged.connect(self._tool_edited)
         self.cutting = QTableWidget(0, 0)
@@ -97,7 +106,8 @@ class ToolEditor(QWidget):
                     t.setItem(r, c, it)
                 else:
                     it = QTableWidgetItem(format_value(tool.get(f.name)))
-                    it.setToolTip(f"default: {f.default}")
+                    what = TOOL_TIPS.get(f.name, "")
+                    it.setToolTip(f"{what}\n\ndefault: {f.default}" if what else f"default: {f.default}")
                     t.setItem(r, c, it)
         t.resizeColumnsToContents()
         self._loading = False
@@ -119,6 +129,8 @@ class ToolEditor(QWidget):
         c.clear()
         c.setColumnCount(1 + len(keys))
         c.setHorizontalHeaderLabels(["material"] + keys)
+        for col, key in enumerate(["material"] + keys):
+            c.horizontalHeaderItem(col).setToolTip(CUTTING_TIPS.get(key, ""))
         c.setRowCount(len(cut))
         for r, (mat, vals) in enumerate(cut.items()):
             c.setItem(r, 0, QTableWidgetItem(mat))

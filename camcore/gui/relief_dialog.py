@@ -75,6 +75,7 @@ class ReliefDialog(QDialog):
         left.addWidget(self.error)
         self.sim = QCheckBox("Run the LinuxCNC sim on every job (needs Docker, a few minutes each)")
         self.sim.setChecked(True)
+        self.sim.setToolTip("Off: quick checks only; the programs are then not ready for the machine")
         left.addWidget(self.sim)
         left.addWidget(QLabel(f"The files go to {self.out_dir}"))
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -135,6 +136,8 @@ class ReliefDialog(QDialog):
             try:
                 label.setText(q.text(s))
                 default = str(q.default(s))
+                label.setToolTip(f"{q.text(s)}\n\nsuggested: {default}")
+                w.setToolTip(label.toolTip())
                 if q.options:
                     opts = [str(o) for o in q.options(s)]
                     keep = w.currentText() if chosen and w.currentText() in opts else default

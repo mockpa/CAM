@@ -16,7 +16,7 @@ try:                                      # must be loaded before the QApplicati
 except ImportError:
     pass
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QComboBox  # noqa: E402
+from PySide6.QtWidgets import QComboBox, QFormLayout  # noqa: E402
 
 import camcore.check  # noqa: E402
 from camcore.gui.main_window import MainWindow  # noqa: E402
@@ -72,7 +72,8 @@ def test_edit_an_operation_and_save(qtbot, window, ex):
     assert fields["step"].text() == "0.15"
     assert fields["plunge"].text() == "" and fields["plunge"].placeholderText() == "300"
     assert fields["safe_z"].placeholderText() == "5.0"                 # job defaults
-    assert fields["safe_z"].toolTip() == "from the job defaults"
+    assert fields["safe_z"].toolTip().startswith("Height for rapid moves")         # what it means
+    assert fields["safe_z"].toolTip().endswith("Empty: 5.0 (from the job defaults)")
     type_into(qtbot, fields["feed"], "950")
     type_into(qtbot, fields["top_z"], "")                               # empty: back to inherited
     assert w.project.job["operations"][1]["feed"] == 950
@@ -89,7 +90,7 @@ def test_hints_follow_the_tool_and_material(qtbot, window, ex):
     form = w.ops_panel.form
     fields = {p.name: f for p, f in form.fields.items()}
     assert fields["feed"].placeholderText() == "1500"                    # em3 hardwood
-    assert fields["feed"].toolTip() == "from the tool's hardwood data"
+    assert fields["feed"].toolTip().endswith("(from the tool's hardwood data)")
     tool = next(c for c in form.findChildren(QComboBox) if c.currentText() == "em3")
     tool.setCurrentText("em6")
     tool.textActivated.emit("em6")
@@ -386,3 +387,23 @@ def test_check_runner_never_frees_qt_objects_on_its_thread(qtbot, ex, tmp_path):
         assert not gc.isenabled()
     assert blocker.args[0] is True
     assert gc.isenabled()
+
+
+def test_every_form_row_explains_itself(qtbot, window, ex):
+    """Each operation's labels and fields, and the job's, carry a tooltip."""
+    w = window(ex / "sign_job.json")
+    for row in range(w.ops_panel.list.count()):
+        w.ops_panel.list.setCurrentRow(row)
+        form = w.ops_panel.form.form
+        for i in range(form.rowCount()):
+            label = form.itemAt(i, QFormLayout.LabelRole)
+            if label is not None:
+                assert label.widget().toolTip(), label.widget().text()
+                assert form.itemAt(i, QFormLayout.FieldRole).widget().toolTip(), label.widget().text()
+    jf = w.job_panel.form
+    labels = [jf.itemAt(i, QFormLayout.LabelRole) for i in range(jf.rowCount())]
+    labels = [x.widget() for x in labels if x is not None]
+    assert len(labels) == 11 and all(x.toolTip() for x in labels)
+    header = w.tools_panel.tools.horizontalHeaderItem
+    assert all(header(c).toolTip() for c in range(w.tools_panel.tools.columnCount()))
+    assert w.a_preview.toolTip() and w.a_open.toolTip() and w.out_edit.toolTip()

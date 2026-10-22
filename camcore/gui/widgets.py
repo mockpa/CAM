@@ -14,9 +14,10 @@ class JsonEdit(QLineEdit):
     """One line of JSON for a job key. Empty = the key is absent. on_value(v) is
     called with each valid edit (None when emptied); invalid text turns red."""
 
-    def __init__(self, value, on_value, placeholder="", allow_text=False, parent=None):
+    def __init__(self, value, on_value, placeholder="", allow_text=False, parent=None, tip=""):
         super().__init__(format_value(value) if allow_text else ("" if value is None else json.dumps(value)), parent)
-        self.on_value, self.allow_text = on_value, allow_text
+        self.on_value, self.allow_text, self.tip = on_value, allow_text, tip
+        self.setToolTip(tip)
         self.setPlaceholderText(placeholder)
         self.textEdited.connect(self._edited)
 
@@ -31,7 +32,7 @@ class JsonEdit(QLineEdit):
                 self.setToolTip(f"not valid JSON: {e}")
                 return
         self.setStyleSheet("")
-        self.setToolTip("")
+        self.setToolTip(self.tip)
         self.on_value(v)
 
 

@@ -54,6 +54,7 @@ class WizardDialog(QDialog):
         v.addWidget(self.placed)
         self.sim = QCheckBox("Run the LinuxCNC sim (needs Docker, a few minutes)")
         self.sim.setChecked(True)
+        self.sim.setToolTip("Off: a quick check only; the program is then not ready for the machine")
         v.addWidget(self.sim)
         v.addWidget(QLabel(f"The job goes to {self.out_dir}"))
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -87,6 +88,8 @@ class WizardDialog(QDialog):
             try:
                 label.setText(q.text(s))
                 default = str(q.default(s))
+                label.setToolTip(f"{q.text(s)}\n\nsuggested: {default}")
+                w.setToolTip(label.toolTip())
                 if q.options:
                     opts = [str(o) for o in q.options(s)]
                     keep = w.currentText() if chosen and w.currentText() in opts else default

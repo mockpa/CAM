@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QInputDial
 
 from ..check import DEFAULT_MACHINE
 from ..post import POSTS
+from ..tooltips import JOB_TIPS, OP_TIPS, STRUCT_TIPS, param_tip
 from ..project import (CHOICES, OP_KINDS, Project, describe_op, effective, format_value, materials, op_params,
                        target_key, unique_name, unknown_keys)
 from .widgets import BAD, JsonEdit, combo
@@ -26,12 +27,22 @@ def _clear(layout):
             item.widget().deleteLater()
 
 
+def add_row(form: QFormLayout, label: str, widget: QWidget, tip: str = ""):
+    """A form row whose label and field both explain themselves on hover."""
+    lab = QLabel(label)
+    lab.setToolTip(tip)
+    widget.setToolTip(tip)
+    form.addRow(lab, widget)
+    return lab
+
+
 def _path_row(edit: QLineEdit, browse) -> QWidget:
     w = QWidget()
     h = QHBoxLayout(w)
     h.setContentsMargins(0, 0, 0, 0)
     h.addWidget(edit)
     b = QPushButton("…")
+    b.setToolTip("Choose the file")
     b.setFixedWidth(30)
     b.clicked.connect(browse)
     h.addWidget(b)
@@ -53,27 +64,31 @@ class JobPanel(QWidget):
         self.project = p = project
         _clear(self.form)
         job = p.job
-        self.form.addRow("Post", combo(POSTS, job.get("post", "linuxcnc"), lambda v: self._set("post", v)))
+        add_row(self.form, "Post", combo(POSTS, job.get("post", "linuxcnc"), lambda v: self._set("post", v)),
+                JOB_TIPS["post"])
         self.material = combo(materials(p.library()), job.get("material"), lambda v: self._set("material", v),
                               empty_label="(none: op values and defaults only)")
-        self.form.addRow("Material", self.material)
+        self.material_label = add_row(self.form, "Material", self.material, JOB_TIPS["material"])
         self.library = QLineEdit(job.get("tool_library", ""))
         self.library.textEdited.connect(lambda t: self._set_library(t.strip() or None))
-        self.form.addRow("Tool library", _path_row(self.library, self._browse_library))
+        self.library.setToolTip(JOB_TIPS["tool_library"])
+        add_row(self.form, "Tool library", _path_row(self.library, self._browse_library), JOB_TIPS["tool_library"])
         self.machine = QLineEdit(job.get("machine", ""))
         self.machine.setPlaceholderText(f"default: {DEFAULT_MACHINE}")
         self.machine.textEdited.connect(lambda t: self._set("machine", t.strip() or None))
-        self.form.addRow("Machine", _path_row(self.machine, self._browse_machine))
-        self.form.addRow("Tool order", combo(["minimize_changes"], job.get("tool_order"),
-                                             lambda v: self._set("tool_order", v), empty_label="as written"))
+        self.machine.setToolTip(JOB_TIPS["machine"])
+        add_row(self.form, "Machine", _path_row(self.machine, self._browse_machine), JOB_TIPS["machine"])
+        add_row(self.form, "Tool order", combo(["minimize_changes"], job.get("tool_order"),
+                                               lambda v: self._set("tool_order", v), empty_label="as written"),
+                JOB_TIPS["tool_order"])
         for key, hint in [("stock", '{"type": "box", "x": [0, 100], "y": [0, 100], "z": [-10, 0]}'),
                           ("defaults", '{"safe_z": 5}'),
                           ("rotary", 'wrap around A, e.g. {"diameter": 40}'),
                           ("index", 'indexed 3+1, e.g. {"sides": 4} or [0, 180]'),
                           ("index_clearance", "5"),
                           ("post_options", "{}")]:
-            self.form.addRow(key.replace("_", " ").capitalize(),
-                             JsonEdit(job.get(key), lambda v, k=key: self._set(k, v), hint))
+            add_row(self.form, key.replace("_", " ").capitalize(),
+                    JsonEdit(job.get(key), lambda v, k=key: self._set(k, v), hint, tip=JOB_TIPS[key]), JOB_TIPS[key])
 
     def _set(self, key, value):
         if value is None:
@@ -92,6 +107,7 @@ class JobPanel(QWidget):
         cur = self.project.job.get("material")
         new = combo(materials(self.project.library()), cur, lambda v: self._set("material", v),
                     empty_label="(none: op values and defaults only)")
+        new.setToolTip(JOB_TIPS["material"])
         self.form.replaceWidget(self.material, new)
         self.material.deleteLater()
         self.material = new
@@ -119,10 +135,15 @@ class ShapesPanel(QWidget):
         super().__init__(parent)
         v = QVBoxLayout(self)
         bar = QHBoxLayout()
-        for label, fn in [("Rectangle", self.add_rect), ("Circle", self.add_circle),
-                          ("SVG / DXF…", self.import_shape), ("STL model…", self.import_model),
-                          ("Rename…", self.rename), ("Remove", self.remove)]:
+        for label, fn, tip in [
+                ("Rectangle", self.add_rect, "Add a rectangle; edit its numbers in the JSON box below"),
+                ("Circle", self.add_circle, "Add a circle; edit its numbers in the JSON box below"),
+                ("SVG / DXF…", self.import_shape, "Import a drawing as a shape (closed contours only)"),
+                ("STL model…", self.import_model, "Add a 3D model for 3D or rotary operations"),
+                ("Rename…", self.rename, "Rename the selected shape or model; operations using it follow"),
+                ("Remove", self.remove, "Delete the selected shape or model")]:
             b = QPushButton(label)
+            b.setToolTip(tip)
             b.clicked.connect(fn)
             bar.addWidget(b)
         bar.addStretch()
@@ -132,6 +153,8 @@ class ShapesPanel(QWidget):
         self.list.currentRowChanged.connect(self._show)
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText("select a shape or model to edit it as JSON")
+        self.editor.setToolTip("The selected shape or model as JSON, with the same keys as in the job file. "
+                               "Invalid JSON turns red and is not applied")
         self.editor.textChanged.connect(self._edited)
         self.error = QLabel()
         self.error.setStyleSheet("color: #b00020;")
@@ -241,33 +264,41 @@ class OpForm(QWidget):
         lib = project.library()
         kind = op["op"]
         self.form = form = QFormLayout(self)
-        form.addRow("Operation", QLabel(f"<b>{kind}</b>"))
-        form.addRow("Id", JsonEdit(op.get("id"), lambda v: self._set("id", v), "names it for \"after\"",
-                                   allow_text=True))
-        form.addRow("After", JsonEdit(op.get("after"), lambda v: self._set("after", v),
-                                      'ids this waits for, e.g. ["rough"]'))
-        form.addRow("Tool", combo(sorted(lib), op.get("tool"), lambda v: self._set("tool", v)))
+        add_row(form, "Operation", QLabel(f"<b>{kind}</b>"), OP_TIPS.get(kind, ""))
+        add_row(form, "Id", JsonEdit(op.get("id"), lambda v: self._set("id", v), "names it for \"after\"",
+                                     allow_text=True, tip=STRUCT_TIPS["id"]), STRUCT_TIPS["id"])
+        add_row(form, "After", JsonEdit(op.get("after"), lambda v: self._set("after", v),
+                                        'ids this waits for, e.g. ["rough"]', tip=STRUCT_TIPS["after"]),
+                STRUCT_TIPS["after"])
+        add_row(form, "Tool", combo(sorted(lib), op.get("tool"), lambda v: self._set("tool", v)), STRUCT_TIPS["tool"])
         tk = target_key(kind)
         if tk == "points":
-            form.addRow("Points", JsonEdit(op.get("points"), lambda v: self._set("points", v), "[[x, y], ...]"))
+            add_row(form, "Points", JsonEdit(op.get("points"), lambda v: self._set("points", v), "[[x, y], ...]",
+                                             tip=STRUCT_TIPS["points"]), STRUCT_TIPS["points"])
         else:
             names = sorted(project.job.get("shapes" if tk == "shape" else "models", {}))
-            form.addRow(tk.capitalize(), combo(names, op.get(tk), lambda v: self._set(tk, v)))
+            add_row(form, tk.capitalize(), combo(names, op.get(tk), lambda v: self._set(tk, v)), STRUCT_TIPS[tk])
         if kind == "vcarve":
-            form.addRow("Clear tool", combo(sorted(lib), op.get("clear_tool"),
-                                            lambda v: self._set("clear_tool", v), empty_label="(none)"))
-            form.addRow("Clear", JsonEdit(op.get("clear"), lambda v: self._set("clear", v),
-                                          'clearing pocket parameters, e.g. {"stepover_ratio": 0.45}'))
+            add_row(form, "Clear tool", combo(sorted(lib), op.get("clear_tool"),
+                                              lambda v: self._set("clear_tool", v), empty_label="(none)"),
+                    STRUCT_TIPS["clear_tool"])
+            add_row(form, "Clear", JsonEdit(op.get("clear"), lambda v: self._set("clear", v),
+                                            'clearing pocket parameters, e.g. {"stepover_ratio": 0.45}',
+                                            tip=STRUCT_TIPS["clear"]), STRUCT_TIPS["clear"])
         if tk != "model":                       # rotary model ops turn A themselves
-            form.addRow("Index", JsonEdit(op.get("index"), lambda v: self._set("index", v),
-                                          "A angles: 90, [0, 180], {\"sides\": 4}"))
-            form.addRow("Face z", JsonEdit(op.get("face_z"), lambda v: self._set("face_z", v),
-                                           "top of each indexed face (default: the stock)"))
+            add_row(form, "Index", JsonEdit(op.get("index"), lambda v: self._set("index", v),
+                                            "A angles: 90, [0, 180], {\"sides\": 4}", tip=STRUCT_TIPS["index"]),
+                    STRUCT_TIPS["index"])
+            add_row(form, "Face z", JsonEdit(op.get("face_z"), lambda v: self._set("face_z", v),
+                                             "top of each indexed face (default: the stock)",
+                                             tip=STRUCT_TIPS["face_z"]), STRUCT_TIPS["face_z"])
         self.warning = QLabel()
         self.warning.setWordWrap(True)
         self.warning.setStyleSheet("color: #b00020;")
         form.addRow(self.warning)
-        form.addRow(QLabel("<b>Parameters</b> (empty = inherited, shown in grey)"))
+        head = QLabel("<b>Parameters</b> (empty = inherited, shown in grey)")
+        head.setToolTip("Hover over a parameter to see what it does and where its grey value comes from")
+        form.addRow(head)
         self.fields = {}
         for p in op_params(kind):
             if p.name in CHOICES:
@@ -277,7 +308,7 @@ class OpForm(QWidget):
             else:
                 w = JsonEdit(op.get(p.name), lambda v, k=p.name: self._set(k, v), allow_text=True)
             self.fields[p] = w
-            form.addRow(p.name, w)
+            add_row(form, p.name, w, param_tip(kind, p.name))
         self.hints()
 
     def _set(self, key, value):
@@ -316,7 +347,10 @@ class OpForm(QWidget):
             else:
                 hint, tip = format_value(p.default), "the operation's default"
             (w.lineEdit() if hasattr(w, "lineEdit") else w).setPlaceholderText(hint)
-            w.setToolTip(tip)
+            what = param_tip(self.op["op"], p.name)
+            w.setToolTip(f"{what}\n\nEmpty: {hint} ({tip})" if what else tip)
+            if hasattr(w, "tip"):
+                w.tip = w.toolTip()
         self.warning.setText("\n".join(problems))
 
 
@@ -332,21 +366,28 @@ class OpsPanel(QWidget):
         bar = QHBoxLayout()
         add = QToolButton()
         add.setText("Add")
+        add.setToolTip("Add an operation at the end of the list")
         add.setPopupMode(QToolButton.InstantPopup)
         menu = QMenu(add)
         for k in OP_KINDS:
-            menu.addAction(k, lambda k=k: self.add(k))
+            menu.addAction(k, lambda k=k: self.add(k)).setToolTip(OP_TIPS[k])
+        menu.setToolTipsVisible(True)
         add.setMenu(menu)
         bar.addWidget(add)
-        for label, fn in [("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1)),
-                          ("Duplicate", self.duplicate), ("Remove", self.remove)]:
+        for label, fn, tip in [("Up", lambda: self.move(-1), "Cut the selected operation earlier"),
+                               ("Down", lambda: self.move(1), "Cut the selected operation later"),
+                               ("Duplicate", self.duplicate, "Copy the selected operation, e.g. to run it with "
+                                                             "another tool"),
+                               ("Remove", self.remove, "Delete the selected operation")]:
             b = QPushButton(label)
+            b.setToolTip(tip)
             b.clicked.connect(fn)
             bar.addWidget(b)
         bar.addStretch()
         v.addLayout(bar)
         split = QSplitter(Qt.Vertical)
         self.list = QListWidget()
+        self.list.setToolTip("The operations, in cutting order. Select one to edit it below")
         self.list.currentRowChanged.connect(self._show)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)

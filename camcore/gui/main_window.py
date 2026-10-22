@@ -37,6 +37,7 @@ class ViewerPane(QWidget):
         bar = QHBoxLayout()
         self.label = QLabel("Preview or Export to see the program here.")
         self.open_btn = QPushButton("Open in browser")
+        self.open_btn.setToolTip("Show the same viewer in a full browser window")
         self.open_btn.setEnabled(False)
         self.open_btn.clicked.connect(lambda: webbrowser.open(Path(self.path).resolve().as_uri()))
         bar.addWidget(self.label, 1)
@@ -83,17 +84,21 @@ class MainWindow(QMainWindow):
         self.tools_panel.saved.connect(self._library_saved)
 
         self.left = QTabWidget()
-        self.left.addTab(self.ops_panel, "Operations")
-        self.left.addTab(self.shapes_panel, "Shapes && models")
-        self.left.addTab(self.job_panel, "Job")
-        self.left.addTab(self.tools_panel, "Tool library")
+        for panel, label, tip in [
+                (self.ops_panel, "Operations", "What gets cut, in which order"),
+                (self.shapes_panel, "Shapes && models", "The 2D shapes and STL models the operations cut"),
+                (self.job_panel, "Job", "Stock, material, machine and settings for the whole job"),
+                (self.tools_panel, "Tool library", "The tools and their feeds and speeds per material")]:
+            self.left.setTabToolTip(self.left.addTab(panel, label), tip)
         self.viewer = ViewerPane()
         self.report = QPlainTextEdit()
         self.report.setReadOnly(True)
         self.report.setFont(QFont("monospace"))
         self.right = QTabWidget()
-        self.right.addTab(self.viewer, "Viewer")
-        self.right.addTab(self.report, "Report")
+        self.right.setTabToolTip(self.right.addTab(self.viewer, "Viewer"),
+                                 "The 3D viewer of the last checked program")
+        self.right.setTabToolTip(self.right.addTab(self.report, "Report"),
+                                 "The log of the last check: what was checked and what was found")
         split = QSplitter()
         split.addWidget(self.left)
         split.addWidget(self.right)
@@ -121,6 +126,11 @@ class MainWindow(QMainWindow):
         self.a_save_as = act("Save &As…", self.save_as, QKeySequence.SaveAs)
         self.a_quit = act("&Quit", self.close, QKeySequence.Quit)
         self.a_wizard = act("Rotary &wizard…", self.wizard)
+        self.a_new.setToolTip("Start a new, empty job")
+        self.a_open.setToolTip("Open a job file")
+        self.a_save.setToolTip("Save the job file")
+        self.a_save_as.setToolTip("Save the job under another name; relative paths are adjusted")
+        self.a_wizard.setToolTip("Turned parts from an STL: answer a few questions, get a checked rotary job")
         self.a_relief = act("&Relief…", self.relief)
         self.a_relief.setToolTip("Lamellas, a 3D relief or pins from an image or STL: writes the jobs and "
                                  "paperwork and checks every job")
@@ -149,12 +159,17 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction(self.a_preview)
         tb.addAction(self.a_export)
-        tb.addWidget(QLabel("  Output folder: "))
+        out_tip = "Where Export writes the checked program (default: out/ next to the job)"
+        out_label = QLabel("  Output folder: ")
+        out_label.setToolTip(out_tip)
+        tb.addWidget(out_label)
         self.out_edit = QLineEdit()
+        self.out_edit.setToolTip(out_tip)
         self.out_edit.setMinimumWidth(300)
         self.out_edit.textEdited.connect(lambda t: setattr(self, "out_dir_custom", t.strip() or None))
         tb.addWidget(self.out_edit)
         b = QPushButton("…")
+        b.setToolTip("Choose the output folder")
         b.clicked.connect(self._browse_out)
         tb.addWidget(b)
 

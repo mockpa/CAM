@@ -430,8 +430,8 @@ If the port is taken (`port is already allocated`), an older GUI container is st
    `scp out/NAME/NAME.ngc <user>@<pi>:~/linuxcnc/nc_files/`).
 2. **Open** it in AXIS: File → Open (Ctrl+O). Check the preview sits where you expect.
 3. **Set up**: home, load the stock, set G54 at the job's origin. Flat jobs: X0 Y0 at the stock's
-   front-left corner, Z0 on its top. Rotary jobs: Y0 Z0 on the rotary axis, X as the check assumed
-   (the report's machine profile, from the jaw face and `chuck_hold`). The check only means
+   front-left corner, Z0 on its top. Rotary jobs: Y0 Z0 on the rotary axis, and X so that the chuck's jaw
+   face reads X = `x[0]` + `chuck_hold` of the job's stock (section 6.1). The check only means
    something if G54 is where it assumed.
 4. **Tools**: the program calls `Tn M6` with n = ATC pocket. The rack must hold those tools, and their
    gauge lengths should match the library's `gauge_length`.
@@ -574,6 +574,6 @@ tool's `gauge_length`.
 | `... is outside machine travel` | the part does not fit where G54 puts it; on rotary jobs the swing may be too large |
 | `T.. plunges into material but is not marked center_cutting` | use `entry: "ramp"`/`"helix"`, or mark the tool if it really is centre-cutting |
 | `tool ... has no cutting data for material ...` | add that material under the tool's `cutting`, or remove `material` from the job |
-| `contour ... does not close` (DXF) | fix the gap in CAD, raise `join_tolerance`, or `ignore_open` |
+| `... contour(s) don't close within 0.01 mm, e.g. an open end at (x, y)` (DXF) | fix the gap in CAD, raise `join_tolerance`, or `ignore_open` |
 | `port is already allocated` (sim GUI) | `docker ps`, `docker stop <name>` |
 | Python import errors, numpy mismatch | `unset PYTHONPATH` (ROS) and `conda activate ./.conda` |

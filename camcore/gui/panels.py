@@ -278,13 +278,17 @@ class OpForm(QWidget):
         else:
             names = sorted(project.job.get("shapes" if tk == "shape" else "models", {}))
             add_row(form, tk.capitalize(), combo(names, op.get(tk), lambda v: self._set(tk, v)), STRUCT_TIPS[tk])
-        if kind == "vcarve":
+        if kind in ("vcarve", "inlay"):         # inlay: required, the flat areas
             add_row(form, "Clear tool", combo(sorted(lib), op.get("clear_tool"),
                                               lambda v: self._set("clear_tool", v), empty_label="(none)"),
                     STRUCT_TIPS["clear_tool"])
             add_row(form, "Clear", JsonEdit(op.get("clear"), lambda v: self._set("clear", v),
                                             'clearing pocket parameters, e.g. {"stepover_ratio": 0.45}',
                                             tip=STRUCT_TIPS["clear"]), STRUCT_TIPS["clear"])
+        if kind == "inlay":
+            add_row(form, "Fit with", JsonEdit(op.get("fit_with"), lambda v: self._set("fit_with", v),
+                                               "plug only: the pocket job, e.g. inlay_pocket_job.json",
+                                               allow_text=True, tip=STRUCT_TIPS["fit_with"]), STRUCT_TIPS["fit_with"])
         if tk != "model":                       # rotary model ops turn A themselves
             add_row(form, "Index", JsonEdit(op.get("index"), lambda v: self._set("index", v),
                                             "A angles: 90, [0, 180], {\"sides\": 4}", tip=STRUCT_TIPS["index"]),
@@ -326,6 +330,15 @@ class OpForm(QWidget):
             problems.append(str(e))
         if self.op.get("tool") not in self.project.library():
             problems.append(f"tool {self.op.get('tool')!r} is not in the tool library")
+        tk = target_key(self.op["op"])
+        if tk != "points":
+            have = self.project.job.get("shapes" if tk == "shape" else "models", {})
+            if not self.op.get(tk):
+                problems.append(f"pick a {tk}" + ("" if have else f" (add one on the Shapes & models tab first)"))
+            elif self.op[tk] not in have:
+                problems.append(f"{tk} {self.op[tk]!r} is not in the job (renamed or removed?)")
+        if self.op["op"] == "inlay" and not self.op.get("clear_tool"):
+            problems.append("inlay needs a clear tool (an end mill for the flat areas)")
         bad = unknown_keys(self.op)
         if bad:
             problems.append(f"{self.op['op']} does not take {', '.join(bad)} (edit the job file to remove)")

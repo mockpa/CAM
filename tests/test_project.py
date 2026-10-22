@@ -98,7 +98,7 @@ def test_build_a_job_from_scratch_and_run_it(tmp_path):
     p.set_op_value(op, "depth", 2.0)
     p.set_op_value(op, "step_down", 1.0)
     art = p.add_shape_file(d / "sign.svg")
-    assert p.job["shapes"][art] == {"type": "svg", "file": "sign.svg"}
+    assert p.job["shapes"][art] == {"type": "svg", "file": "sign.svg", "fit_origin": [8.9, 30.3]}  # centred on the stock
     v = p.add_op("vcarve")
     assert v["tool"] == "v60" and v["shape"] == "recess" and v["id"] == "vcarve"
     p.set_op_value(v, "shape", art)

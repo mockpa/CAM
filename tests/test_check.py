@@ -34,7 +34,9 @@ def test_failing_job_writes_only_a_report_and_removes_the_old_program(tmp_path):
     (out / "sign_view.html").write_text("old viewer")
     job = json.loads((EX / "sign_job.json").read_text())
     job["shapes"]["recess"]["x"] = 1000                 # pocket runs past X max
-    assert not check(copy_job(tmp_path, shapes=job["shapes"]), out, sim=False, log=lambda s: None)
+    job["stock"]["x"] = [0, 1200]                       # still on the stock: verify's travel check finds it
+    assert not check(copy_job(tmp_path, shapes=job["shapes"], stock=job["stock"]), out, sim=False,
+                     log=lambda s: None)
     assert sorted(f.name for f in out.iterdir()) == ["sign_report.txt"]
     assert "outside machine travel" in (out / "sign_report.txt").read_text()
 

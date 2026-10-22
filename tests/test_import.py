@@ -1,5 +1,6 @@
 import json
 import math
+from pathlib import Path
 
 import ezdxf
 import pytest
@@ -8,6 +9,8 @@ from camcore.dxf import load_dxf
 from camcore.job import load_job, run_job
 from camcore.post import job_post
 from camcore.svg import _cubic, load_svg, parse_transform
+
+EX = Path(__file__).resolve().parent.parent / "examples"
 
 
 def svg(tmp_path, body, attrs='viewBox="0 0 100 100"'):
@@ -160,3 +163,63 @@ def test_dxf_job_profile_becomes_arcs(tmp_path):
     assert tuple(round(v, 3) for v in (minx, miny, maxx, maxy)) == (8.5, 8.5, 51.5, 51.5)   # r 20 + 1.5 around (30, 30)
     g = job_post(j).emit(paths)
     assert sum(l.startswith(("G2 ", "G3 ")) for l in g.splitlines()) >= 4
+
+
+def _svg_job(tmp_path, shape_extra=None, stock_x=(0, 200)):
+    """An SVG drawn at 5..45 x 5..25 in its own coordinates (Y down), so camcore puts it at Y -25..-5."""
+    (tmp_path / "art.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="50mm" height="30mm" '
+                                      'viewBox="0 0 50 30"><rect x="5" y="5" width="40" height="20"/></svg>')
+    return {"tool_library": str(EX / "tools.json"),
+            "stock": {"type": "box", "x": list(stock_x), "y": [0, 100], "z": [-10, 0]},
+            "shapes": {"art": {"type": "svg", "file": "art.svg", **(shape_extra or {})}},
+            "operations": [{"op": "pocket", "shape": "art", "tool": "em3", "depth": 1, "step_down": 1}]}
+
+
+def test_shape_off_the_stock_says_how_to_place_it(tmp_path):
+    job = _svg_job(tmp_path)
+    with pytest.raises(ValueError) as e:
+        run_job(job, tmp_path)
+    assert str(e.value) == (
+        "shape 'art' lies at X 5..45 Y -25..-5, the stock at X 0..200 Y 0..100: it is completely off the "
+        'stock. Add "fit_origin": [x, y] to the shape to put its lower-left corner there, e.g. [80, 40] '
+        "to centre it on the stock")
+    job["shapes"]["art"]["fit_origin"] = [80, 40]
+    paths = run_job(job, tmp_path)
+    assert not [n for tp in paths for n in tp.notes if "off the stock" in n]
+
+
+def test_shape_partly_off_the_stock_is_a_note(tmp_path):
+    paths = run_job(_svg_job(tmp_path, {"fit_origin": [-10, 40]}), tmp_path)
+    notes = [n for tp in paths for n in tp.notes if "off the stock" in n]
+    assert notes == ["#1: shape 'art' lies at X -10..30 Y 40..60, the stock at X 0..200 Y 0..100: part of it is "
+                     'off the stock. If that is not meant, add "fit_origin": [x, y] to the shape to put its '
+                     "lower-left corner there, e.g. [80, 40] to centre it on the stock"]
+
+
+def test_shape_covering_the_whole_stock_is_facing(tmp_path):
+    job = _svg_job(tmp_path, {"fit_origin": [80, 40]})
+    job["shapes"]["face"] = {"type": "rect", "x": -12, "y": -12, "w": 224, "h": 124}
+    job["operations"].append({"op": "pocket", "shape": "face", "tool": "em6", "depth": 0.5, "step_down": 0.5})
+    assert not [n for tp in run_job(job, tmp_path) for n in tp.notes if "off the stock" in n]
+
+
+def test_shape_bigger_than_the_stock(tmp_path):
+    with pytest.raises(ValueError, match=r"completely off the stock. It is 40 x 20 mm, bigger than the stock: scale the drawing"):
+        run_job(_svg_job(tmp_path, stock_x=(100, 120)), tmp_path)
+
+
+def test_missing_references_say_what_is_missing(tmp_path):
+    job = _svg_job(tmp_path, {"fit_origin": [80, 40]})
+    op = job["operations"][0]
+    del op["shape"]
+    with pytest.raises(ValueError, match=r"^operation '#1' \(pocket\) has no shape: pick one \(shapes: art\)$"):
+        run_job(job, tmp_path)
+    op["shape"] = "recess"
+    with pytest.raises(ValueError, match=r"shape 'recess' is not in the job's shapes \(shapes: art\)"):
+        run_job(job, tmp_path)
+    op["shape"], op["tool"] = "art", "em99"
+    with pytest.raises(ValueError, match=r"tool 'em99' is not in the tool library \(tools: ball3, em3"):
+        run_job(job, tmp_path)
+    job["operations"] = [{"op": "drill", "tool": "em3", "points": [], "depth": 1}]
+    with pytest.raises(ValueError, match=r"has no points"):
+        run_job(job, tmp_path)

@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 from . import ops
-from .job import cutting_data, param_sources
+from .job import build_shape, cutting_data, param_sources
 from .tools import Tool, library_from_dict
 from .wizard import STRATEGIES, portable
 
@@ -261,7 +261,32 @@ class Project:
         kind = path.suffix.lower().lstrip(".")
         if kind not in ("svg", "dxf"):
             raise ValueError(f"{path.name}: shapes come from .svg or .dxf files")
-        return self.add_shape({"type": kind, "file": self.rel(path)}, path.stem)
+        spec = {"type": kind, "file": self.rel(path)}
+        origin = self.placement(spec)
+        if origin is not None:
+            spec["fit_origin"] = origin
+        return self.add_shape(spec, path.stem)
+
+    def placement(self, spec: dict) -> list | None:
+        """Where an imported drawing goes, as a fit_origin: centred on box stock if it
+        fits there, else on the stock's lower-left corner ([0, 0] without stock).
+        Drawings keep their own coordinates otherwise, and SVG Y runs downwards, so
+        an SVG would land below the stock. None for rotary stock (Y wraps to A) or
+        a file that does not load (the check reports why)."""
+        stock = self.job.get("stock")
+        if stock is not None and stock.get("type") != "box":
+            return None
+        try:
+            x0, y0, x1, y1 = build_shape(spec, self.base).bounds
+        except Exception:                   # noqa: BLE001 - the check reports load errors
+            return None
+        if stock is None:
+            return [0, 0]
+        (sx0, sx1), (sy0, sy1) = stock["x"], stock["y"]
+        w, h = x1 - x0, y1 - y0
+        if w > sx1 - sx0 or h > sy1 - sy0:
+            return [sx0, sy0]
+        return [round((sx0 + sx1 - w) / 2, 1), round((sy0 + sy1 - h) / 2, 1)]
 
     def add_model_file(self, path) -> str:
         path = Path(path)

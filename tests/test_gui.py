@@ -407,3 +407,29 @@ def test_every_form_row_explains_itself(qtbot, window, ex):
     header = w.tools_panel.tools.horizontalHeaderItem
     assert all(header(c).toolTip() for c in range(w.tools_panel.tools.columnCount()))
     assert w.a_preview.toolTip() and w.a_open.toolTip() and w.out_edit.toolTip()
+
+
+def test_inlay_form_has_the_clear_tool_and_warns_without_it(qtbot, window, ex):
+    w = window(ex / "inlay_pocket_job.json")
+    rows = w.ops_panel.form.form
+    labels = [rows.itemAt(i, QFormLayout.LabelRole) for i in range(rows.rowCount())]
+    labels = [x.widget().text() for x in labels if x is not None]
+    assert "Clear tool" in labels and "Fit with" in labels
+    op = next(o for o in w.project.job["operations"] if o["op"] == "inlay")
+    w.ops_panel.list.setCurrentRow(w.project.job["operations"].index(op))
+    form = w.ops_panel.form
+    assert "needs a clear tool" not in form.warning.text()
+    form._set("clear_tool", None)
+    assert "inlay needs a clear tool" in form.warning.text()
+
+
+def test_operation_without_a_shape_is_flagged(qtbot, window, ex):
+    w = window(ex / "sign_job.json")
+    w.ops_panel.add("inlay")
+    op = w.project.job["operations"][-1]
+    assert op["shape"] == "panel"                                       # the first shape
+    form = w.ops_panel.form
+    form._set("shape", None)
+    assert "pick a shape" in form.warning.text()
+    form._set("shape", "gone")
+    assert "shape 'gone' is not in the job" in form.warning.text()

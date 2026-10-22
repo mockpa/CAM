@@ -25,8 +25,11 @@ STRUCT_TIPS = {
     "shape": "The 2D shape to cut (Shapes & models tab)",
     "model": "The STL model to cut (Shapes & models tab)",
     "points": "Hole centres in work coordinates, [[x, y], ...]",
-    "clear_tool": "A flat end mill that first clears the wide areas flat, so the V-carve gets a flat "
-                  "bottom at max_depth. Without it the middle of wide areas stays uncut",
+    "clear_tool": "A flat end mill that first clears the wide areas flat: the V-carve's floor at "
+                  "max_depth, the inlay's pocket floor or plug flange (required for inlays). Without it "
+                  "the middle of wide areas stays uncut",
+    "fit_with": "Plug only: the pocket's job file. The check then replays both parts and tests that the "
+                "plug fits the pocket",
     "clear": "Pocket parameters for the clear tool's pass, e.g. {\"stepover_ratio\": 0.45}",
     "index": "Cut this operation on several faces: A angles, e.g. 90, [0, 180] or {\"sides\": 4}",
     "face_z": "Height of each indexed face above the rotary axis (default: from the stock)",

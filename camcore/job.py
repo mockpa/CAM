@@ -47,7 +47,67 @@ def build_shape(spec: dict, base_dir: Path):
     return g
 
 
+def _mm(v: float) -> str:
+    return f"{v:.1f}".rstrip("0").rstrip(".")
+
+
+def shape_on_stock(name: str, shape, stock: dict | None) -> str | None:
+    """Where a flat job's shape lies against its box stock (in X Y). Entirely off
+    the stock raises ValueError; partly off returns a note; on it returns None.
+    Drawings keep their own coordinates (SVG Y runs downwards, so an SVG lands
+    below Y0), so both messages say how fit_origin moves it."""
+    if not stock or stock.get("type") != "box" or shape.is_empty:
+        return None
+    sx, sy = stock["x"], stock["y"]
+    area = box(sx[0], sy[0], sx[1], sy[1])
+    if shape.within(area) or shape.covers(area):     # covering the whole stock: facing, on purpose
+        return None
+    x0, y0, x1, y1 = shape.bounds
+    w, h = x1 - x0, y1 - y0
+    where = (f"shape {name!r} lies at X {_mm(x0)}..{_mm(x1)} Y {_mm(y0)}..{_mm(y1)}, "
+             f"the stock at X {_mm(sx[0])}..{_mm(sx[1])} Y {_mm(sy[0])}..{_mm(sy[1])}")
+    if w <= sx[1] - sx[0] and h <= sy[1] - sy[0]:
+        cx, cy = (sx[0] + sx[1] - w) / 2, (sy[0] + sy[1] - h) / 2
+        how = (f'add "fit_origin": [x, y] to the shape to put its lower-left corner there, '
+               f'e.g. [{_mm(cx)}, {_mm(cy)}] to centre it on the stock')
+    else:
+        how = (f"it is {_mm(w)} x {_mm(h)} mm, bigger than the stock: scale the drawing "
+               f'("scale") or use bigger stock, then place it with "fit_origin": [x, y]')
+    if not shape.intersects(area):
+        raise ValueError(f"{where}: it is completely off the stock. {how[0].upper()}{how[1:]}")
+    return f"{where}: part of it is off the stock. If that is not meant, {how}"
+
+
 SURFACE_OPS = ("surface_rough", "surface_finish")     # 3-axis model ops (box stock, no A)
+MODEL_OPS = SURFACE_OPS + ("rotary_rough", "rotary_finish")
+
+
+def _names(d) -> str:
+    return ", ".join(sorted(d)) or "none"
+
+
+def check_refs(op_id, kind, spec: dict, tools: dict, shapes: dict, models: dict):
+    """What an operation names must exist: its tool, clear tool, and the shape,
+    model or points it cuts. Says which, instead of a bare KeyError."""
+    where = f"operation {op_id!r} ({kind})"
+    if not kind or not hasattr(ops, kind):
+        raise ValueError(f"operation {op_id!r}: unknown op {kind!r}")
+    for key in ("tool", "clear_tool"):
+        name = spec.get(key)
+        if key == "tool" and not name:
+            raise ValueError(f"{where} has no tool: pick one (tools: {_names(tools)})")
+        if name and name not in tools:
+            raise ValueError(f"{where}: {key} {name!r} is not in the tool library (tools: {_names(tools)})")
+    if kind == "drill":
+        if not spec.get("points"):
+            raise ValueError(f"{where} has no points: give the hole centres, [[x, y], ...]")
+        return
+    key, have = ("model", models) if kind in MODEL_OPS else ("shape", shapes)
+    name = spec.get(key)
+    if not name:
+        raise ValueError(f"{where} has no {key}: pick one ({key}s: {_names(have)})")
+    if name not in have:
+        raise ValueError(f"{where}: {key} {name!r} is not in the job's {key}s ({key}s: {_names(have)})")
 
 
 def build_model(spec: dict, base_dir: Path):
@@ -149,6 +209,7 @@ def run_job(job: dict, base_dir: Path = Path(".")):
         after = spec_own.pop("after", [])
         if op_id in by_id:
             raise ValueError(f"duplicate operation id {op_id!r}")
+        check_refs(op_id, kind, {"tool": spec_own.get("tool"), **spec_own}, tools, shapes, models)
         tool_name = spec_own.pop("tool")
         index_spec = spec_own.pop("index", None if "model" in spec_own else job.get("index"))
         face_z = spec_own.pop("face_z", None)
@@ -181,7 +242,11 @@ def run_job(job: dict, base_dir: Path = Path(".")):
             tp = fn(model, tool, **spec)
             native.add(id(tp))
         else:
-            shape = shapes[spec.pop("shape")]
+            shape_name = spec.pop("shape")
+            shape = shapes[shape_name]
+            off = None
+            if index_spec is None and not job.get("rotary"):
+                off = shape_on_stock(shape_name, shape, job.get("stock"))
             clear = spec.pop("clear_tool", None)
             clear_args = spec.pop("clear", {})
             if kind == "vcarve" and clear:
@@ -201,6 +266,8 @@ def run_job(job: dict, base_dir: Path = Path(".")):
                 tp = _inlay(shape, tool, spec, clear, clear_args, tools, job, params, rpm, op_id, after, mine)
             else:
                 tp = fn(shape, tool, **spec)
+            if off:
+                tp.notes.append(f"{op_id}: {off}")
         tp.spindle_rpm = rpm
         mine.append([tp, op_id, set(after) | {n[1] for n in mine}])   # the V-bit pass waits for its clearing
         if index_spec is not None:

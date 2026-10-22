@@ -23,7 +23,7 @@ def test_op_specific_tip_wins():
 
 
 def test_structure_job_tool_and_cutting_tips():
-    assert set(STRUCT_KEYS) - {"op", "fit_with"} <= set(STRUCT_TIPS)
+    assert set(STRUCT_KEYS) - {"op"} <= set(STRUCT_TIPS)
     for key in ("post", "material", "tool_library", "machine", "tool_order", "stock", "defaults", "rotary",
                 "index", "index_clearance", "post_options"):
         assert JOB_TIPS[key]

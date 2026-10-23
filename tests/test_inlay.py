@@ -3,15 +3,17 @@ import json
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
+import shapely
 from shapely.geometry import Point, Polygon, box
 
 from camcore import ops
 from camcore.check import check
-from camcore.inlay_fit import fit
+from camcore.inlay_fit import fit, simulate
 from camcore.job import build_shape, run_job
 from camcore.ops.common import offset
-from camcore.ops.inlay import inlay_checks, sharp_notches
+from camcore.ops.inlay import REST_SCALLOP, inlay_checks, sharp_notches
 from camcore.shapes import mirror
 from camcore.tools import Tool
 
@@ -211,6 +213,59 @@ def test_a_clear_pass_with_nothing_the_clear_tool_fits_is_left_out(tmp_path):
     path = tmp_path / "slot_job.json"
     path.write_text(json.dumps(job))
     assert check(path, tmp_path / "out", sim=False, log=lambda s: None)
+
+
+# Two bars 6 mm wide, 3 mm apart. At P = 3 the pocket's flat floor in each bar is
+# 6 - 2 * 3 * tan 30 = 2.54 mm wide and the plug's flange between them
+# 3 - 2 * M * tan 30 = 1.85 mm: em3 (3.175 mm) reaches neither.
+BARS = {"type": "union", "shapes": [{"type": "rect", "x": 10, "y": 10, "w": 6, "h": 30},
+                                    {"type": "rect", "x": 19, "y": 10, "w": 6, "h": 30}]}
+
+
+def cut_vs_ideal(job_path, part):
+    """(cut depth, ideal depth, cell x, cell y) on verify's simulated stock."""
+    job = json.loads(job_path.read_text())
+    sim, issues = simulate(job, job_path.parent)
+    assert [str(i) for i in issues if i.level == "error"] == []
+    design = build_shape(job["shapes"]["art"], job_path.parent)
+    if part == "plug":
+        design = mirror(design, "y")
+    xs = sim.x0 + np.arange(sim.h.shape[0]) * sim.res
+    ys = sim.y0 + np.arange(sim.h.shape[1]) * sim.res
+    X, Y = np.meshgrid(xs, ys, indexing="ij")
+    dist = shapely.distance(design.boundary, shapely.points(X, Y)) * COT
+    inside = shapely.contains_xy(design, X, Y)
+    if part == "pocket":
+        ideal = np.where(inside, np.minimum(P, dist), 0.0)
+    else:
+        ideal = np.where(inside, np.maximum(0.0, S - dist), np.minimum(S + M, S + dist))
+    return sim.top - sim.h, ideal, X, Y
+
+
+@pytest.mark.parametrize("part", ["pocket", "plug"])
+def test_the_v_bit_cuts_the_flat_areas_the_clear_tool_cannot_reach(tmp_path, part):
+    pocket, plug = write_jobs(tmp_path, shape=BARS)
+    path = pocket if part == "pocket" else plug
+    paths = run_job(json.loads(path.read_text()), tmp_path)
+    what = "floor" if part == "pocket" else "flange"
+    assert any(f"mm2 of flat {what} that em3 cannot reach" in n for n in paths[-1].notes)
+    cut, ideal, X, Y = cut_vs_ideal(path, part)
+    assert (cut - ideal).max() < 0.01                         # no gouge anywhere
+    flat = P if part == "pocket" else S + M
+    on_flat = np.isclose(ideal, flat)
+    if part == "plug":                                        # the narrow flange between the bars
+        on_flat &= (X > 16) & (X < 19) & (Y > 12) & (Y < 38)
+    assert on_flat.sum() > 100
+    assert (ideal - cut)[on_flat].max() < REST_SCALLOP + 0.01  # flat up to the V-bit's ridges
+
+
+def test_narrow_bars_fit(tmp_path):
+    # before the V-bit cut the rest, the pocket's ridges and the plug's flange between
+    # the bars held the plug about 1 mm off its seat
+    r = fit(*write_jobs(tmp_path, shape=BARS))
+    assert r.ok, r.lines()
+    assert abs(r.proud) < 0.05
+    assert r.wall_contact > 0.9
 
 
 @pytest.mark.parametrize("part", ["pocket", "plug"])

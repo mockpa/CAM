@@ -312,11 +312,14 @@ def _inlay(shape, tool, spec, clear, clear_args, tools, job, params, rpm, op_id,
         ct = ops.pocket(region, tools[clear], depth, name="inlay-clear", **cargs)
         ct.spindle_rpm = crpm
     tp = ops.inlay(shape, tool, **spec)
-    if ct is not None and any(m.kind == "feed" for m in ct.moves):
+    cleared = ct is not None and any(m.kind == "feed" for m in ct.moves)
+    if cleared:
         mine.append([ct, f"{op_id}:clear", set(after)])
     elif ct is not None:
         # flat areas narrower than the clear tool: an empty pass would still change tools
         tp.notes = ct.notes + [f"{op_id}: nothing to clear that {clear} fits into, clear pass left out"] + tp.notes
+    # what the clear tool cannot reach (all of it without a clear pass) the V-bit cuts flat
+    ops.inlay_rest(tp, region, depth, tool, tools[clear], cleared, **spec)
     return tp
 
 

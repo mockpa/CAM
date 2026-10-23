@@ -97,7 +97,11 @@ def simulate(job: dict, base: Path, machine_path=None, res: float = FIT_RES, gri
     if hasattr(post, "arcs"):
         post.arcs = False    # see the module notes: verify's arc chords would read as a fit error
     gcode = post.emit(run_job(job, base))
-    issues, _, sim = run(gcode, machine_for(job, base, machine_path), stock, res=res)
+    machine = machine_for(job, base, machine_path)
+    # Only the cut heights matter here. The machine-body sweep took about a third of
+    # the time, and each part's own camcore check runs it (with everything else).
+    machine.body = None
+    issues, _, sim = run(gcode, machine, stock, res=res)
     return sim, issues
 
 

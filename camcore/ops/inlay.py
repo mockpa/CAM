@@ -34,10 +34,15 @@ from ..shapes import mirror
 from ..tools import Tool
 from ..toolpath import Toolpath
 from .common import offset, polygons
+from .pocket import clear_levels, offset_loops
 from .vcarve import _vcarve, vcarve, vcarve_flat_bottom_area
 
 PARTS = ("pocket", "plug")
 SHARP_NOTCH = 90.0       # degrees; the plug plunges into the tip of notches narrower than this
+REST_SCALLOP = 0.1       # mm; highest ridge the V-bit leaves on flat areas the clear tool cannot reach
+                         # (half that between its loops; this much where they close up in the middle).
+                         # Harmless: the pocket floor is glue_gap below the plug face, the flange
+                         # surface_gap above the base board.
 
 
 def inlay(shape: BaseGeometry, tool: Tool, pocket_depth: float, part: str = "pocket",
@@ -173,6 +178,43 @@ def inlay_clear_area(shape: BaseGeometry, tool: Tool, clear_tool: Tool, **params
     design = mirror(shape, "y")
     frame = plug_frame(design, p["stock"], p["plug_margin"], grow=clear_tool.radius)
     return frame.difference(offset(design, m * _tan(tool))), s + m
+
+
+def inlay_rest(tp: Toolpath, region: BaseGeometry, depth: float, tool: Tool, clear_tool: Tool,
+               cleared: bool = True, **params) -> float:
+    """Cut, with the V-bit into `tp`, the part of the clear tool's region (pocket floor
+    or plug flange, from inlay_clear_area) that the clear tool cannot reach: narrow
+    strips and corners tighter than its radius, or all of it when the clear pass was
+    left out (cleared=False). Material left there stands above the floor or flange and
+    holds the plug off its seat. The tip runs offset loops at `depth`, the first half
+    a spacing in from the edge, spaced so no ridge stands higher than REST_SCALLOP.
+    Anywhere in the region the tip is gouge-free at that depth: the cone reaches the
+    walls only above their own depth.
+    Returns the area cut (mm^2)."""
+    defaults = {k: p.default for k, p in inspect.signature(inlay).parameters.items()}
+    p = {**defaults, **params}
+    if region.is_empty:
+        return 0.0
+    rest = region
+    if cleared:
+        rest = region.difference(offset(offset(region, -clear_tool.radius), clear_tool.radius))
+    if p["part"] == "plug" and p["plug_margin"] is None and p["stock"]:
+        st = p["stock"]
+        rest = rest.intersection(box(st["x"][0], st["y"][0], st["x"][1], st["y"][1]))
+    w = REST_SCALLOP * _tan(tool)
+    loops = offset_loops(rest, w / 2, w, p["climb"])
+    if not loops:
+        return 0.0
+    entry = "plunge" if p["entry"] == "plunge" else "ramp"
+    top_z = p["top_z"]
+    clear_levels(tp, loops, region, tool, [top_z - depth], top_z, top_z, p["safe_z"], p["feed"], p["plunge"],
+                 p["climb"], entry, p["ramp_angle"], None)
+    area = offset(rest, -w / 2).buffer(w / 2).area
+    if area >= 1.0:                     # corner clean-ups are not worth a note
+        what = "floor" if p["part"] == "pocket" else "flange"
+        tp.notes.append(f"{p['name']}: the V-bit cuts {area:.0f} mm2 of flat {what} that {clear_tool.name} "
+                        f"cannot reach")
+    return area
 
 
 def _tan(tool: Tool) -> float:

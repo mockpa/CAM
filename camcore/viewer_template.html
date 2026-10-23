@@ -46,7 +46,18 @@ h1 { font-family: var(--display); font-weight: 600; font-size: 1.25rem; margin: 
 main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 10px; }
 #stage { position: relative; min-height: 280px; background: var(--scene); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
 #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-.hint { position: absolute; left: 10px; bottom: 8px; font-size: .75rem; color: var(--muted); pointer-events: none; }
+.hint { position: absolute; left: 10px; bottom: 8px; right: 230px; font-size: .75rem; color: var(--muted); pointer-events: none; }
+#views { position: absolute; top: 8px; right: 8px; display: flex; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; background: var(--panel); }
+#views button { font: 600 .75rem var(--display); letter-spacing: .05em; text-transform: uppercase; border: 0; border-left: 1px solid var(--line);
+  background: none; color: var(--ink); padding: 5px 10px; cursor: pointer; }
+#views button:first-child { border-left: 0; }
+#views button.on { background: var(--accent); color: var(--panel); }
+#views button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#legend { position: absolute; right: 8px; bottom: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+  padding: 5px 8px; font-family: var(--mono); font-size: .7rem; color: var(--muted); pointer-events: none; }
+#legend .lrow { display: flex; align-items: center; gap: 6px; }
+#lbar { width: 110px; height: 9px; border-radius: 2px; }
+#lstep { margin-top: 2px; text-align: center; }
 aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
 .box { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; min-width: 0; }
 .label { font-family: var(--display); font-size: .72rem; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 0 0 6px; }
@@ -74,6 +85,7 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-wid
 select { font: inherit; font-size: .85rem; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 4px; }
 @media (max-width: 760px) {
   html, body { height: auto; }
+  .hint { display: none; }
   main { grid-template-columns: minmax(0, 1fr); }
   #stage { height: 60vh; }
 }
@@ -85,7 +97,16 @@ select { font: inherit; font-size: .85rem; background: var(--bg); color: var(--i
   <span class="verdict" id="verdict"></span>
 </header>
 <main>
-  <div id="stage"><span class="hint">Drag to orbit, right-drag or two fingers to pan, wheel or pinch to zoom</span></div>
+  <div id="stage">
+    <div id="views" role="group" aria-label="View">
+      <button data-view="3d">3D</button><button data-view="top">Top</button><button data-view="front">Front</button><button data-view="side">Side</button>
+    </div>
+    <div id="legend" aria-label="Depth colours">
+      <div class="lrow"><span>0</span><div id="lbar"></div><span id="lmax"></span></div>
+      <div id="lstep"></div>
+    </div>
+    <span class="hint">Drag to orbit, right-drag or two fingers to pan, wheel or pinch to zoom, double-click to zoom in on a spot</span>
+  </div>
   <aside>
     <div class="box">
       <p class="label">Position (work coordinates, mm / deg)</p>
@@ -159,10 +180,16 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffe
 renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
 stage.prepend(renderer.domElement);
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 20000);
+// perspective for the 3D view, orthographic (true to scale, no vanishing) for Top / Front / Side
+const persp = new THREE.PerspectiveCamera(40, 1, 0.5, 20000);
+const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -20000, 20000);
+let camera = persp;
 const root = new THREE.Group(); root.rotation.x = -Math.PI / 2; scene.add(root);   // machine Z up -> three Y up
-scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.9));
-const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(1, 3, 2); scene.add(sun);
+// soft sky light plus a low key light from the front left: shallow slopes, ridges and V walls
+// catch it differently, so relief shows even in the top view
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(-1, 1.1, 1.6); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.2); fill.position.set(1, 0.6, -1); scene.add(fill);
 const stockGroup = new THREE.Group(); root.add(stockGroup);    // rotates with A on rotary jobs
 const col = n => new THREE.Color(css(n));
 
@@ -203,34 +230,38 @@ function reveal(line, upto) {      // show segments whose move index < upto
 }
 
 // ---------- stock with live material removal -------------
+// The stock is a grid of heights (box) or of radii per ray from the axis (rotary). Its size
+// comes from a cell budget, so small parts get fine cells and big boards stay fast; only the
+// rows the tool changed are redrawn.
+const STOCK_CELLS = 800000, MIN_RES = 0.1;     // mm
+function stockGrid(S) {
+  if (S.type === "cylinder" || S.type === "bar") {
+    const base = S.type === "bar" ? Math.max(...S.y.map(y => Math.max(...S.z.map(z => Math.hypot(y, z))))) : S.diameter / 2;
+    const len = S.x[1] - S.x[0], res = Math.max(MIN_RES, Math.sqrt(len * 2 * Math.PI * base / STOCK_CELLS));
+    return { res, base, nx: Math.ceil(len / res) + 1, ny: Math.max(90, Math.min(2880, Math.ceil(2 * Math.PI * base / res))) };
+  }
+  const w = S.x[1] - S.x[0], d = S.y[1] - S.y[0], res = Math.max(MIN_RES, Math.sqrt(w * d / STOCK_CELLS));
+  return { res, base: S.z[1], nx: Math.ceil(w / res) + 1, ny: Math.ceil(d / res) + 1 };
+}
 const S = D.stock;
 let grid = null, stockMesh = null;
 if (S) {
-  let nx, ny, x0, y0, res, base;
-  if (rotary) {
-    x0 = S.x[0]; res = Math.max(0.4, (S.x[1] - S.x[0]) / 320);
-    nx = Math.ceil((S.x[1] - x0) / res) + 1;
-    base = S.type === "bar" ? Math.max(...S.y.map(y => Math.max(...S.z.map(z => Math.hypot(y, z))))) : S.diameter / 2;
-    ny = Math.max(90, Math.min(720, Math.ceil(2 * Math.PI * base / res)));
-  } else {
-    x0 = S.x[0]; y0 = S.y[0];
-    res = Math.max(0.25, Math.max(S.x[1] - S.x[0], S.y[1] - S.y[0]) / 360);
-    nx = Math.ceil((S.x[1] - x0) / res) + 1; ny = Math.ceil((S.y[1] - y0) / res) + 1; base = S.z[1];
-  }
+  const { nx, ny, res, base } = stockGrid(S), x0 = S.x[0], y0 = rotary ? 0 : S.y[0];
   const h0 = new Float32Array(nx * ny).fill(base);    // uncut stock: per ray for a bar
   if (rotary && S.type === "bar") for (let j = 0; j < ny; j++) {
     const psi = j / ny * 2 * Math.PI, d = barRadius(S, -Math.sin(psi), Math.cos(psi));
     for (let i = 0; i < nx; i++) h0[i * ny + j] = d;
   }
-  grid = { nx, ny, x0, y0, res, base, h0, h: h0.slice(), dirty: false };
-  const g = new THREE.BufferGeometry();
-  const pos = new Float32Array(nx * ny * 3), colr = new Float32Array(nx * ny * 3);
+  grid = { nx, ny, x0, y0, res, base, h0, h: h0.slice(), dirty: true, di0: 0, di1: nx - 1 };
   grid.floor = rotary ? null : S.z[0];
-  grid.through = 0;                                   // corners cut down to the stock bottom
-  g.setIndex(stockIndex(nx, ny, grid.h, grid.floor, rotary));
-  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  g.setAttribute("color", new THREE.BufferAttribute(colr, 3));
+  grid.span = 1;                          // until fixSpan
+  const g = new THREE.BufferGeometry();
+  g.setIndex(new THREE.BufferAttribute(stockIndex(nx, ny, grid.h, grid.floor, rotary), 1));
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(nx * ny * 3), 3));
+  g.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(nx * ny * 3), 3));
+  g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(nx * ny * 3), 3));
   stockMesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+  stockMesh.frustumCulled = false;        // cuts go below the bounding sphere taken from the uncut block
   stockGroup.add(stockMesh);
   if (!rotary) {   // the block's sides as a faint box, open at the bottom so holes cut through show
     const side = new THREE.MeshLambertMaterial({ color: col("--stock"), transparent: true, opacity: 0.25, depthWrite: false });
@@ -240,45 +271,104 @@ if (S) {
     bx.position.set((S.x[0] + S.x[1]) / 2, (S.y[0] + S.y[1]) / 2, (S.z[0] + S.z[1]) / 2 - 0.05);
     stockGroup.add(bx);
   }
-  refreshStock(true);
-}
-// Triangles of the stock surface. A cell cut through the whole block (all four corners at or
-// below the stock bottom) is left out, so it shows as a hole and not as a floor.
-function stockIndex(nx, ny, h, floor, wrap) {
-  const index = [];
-  const out = k => floor !== null && h[k] <= floor + 1e-6;
-  for (let i = 0; i < nx - 1; i++) for (let j = 0; j < ny - 1 + (wrap ? 1 : 0); j++) {
+  refreshStock();
+} else $("legend").style.display = "none";
+// Triangles of the stock surface, 6 indices per cell (cell rows run along X). A cell cut
+// through the whole block (all four corners at or below the stock bottom) gets degenerate
+// triangles, so it shows as a hole and not as a floor. fillIndex redoes cell rows i0..i1.
+function cellRow(ny, wrap) { return ny - 1 + (wrap ? 1 : 0); }
+function fillIndex(index, nx, ny, h, floor, wrap, i0, i1) {
+  const cj = cellRow(ny, wrap), out = k => floor !== null && h[k] <= floor + 1e-6;
+  for (let i = Math.max(0, i0); i <= Math.min(nx - 2, i1); i++) for (let j = 0; j < cj; j++) {
     const jn = (j + 1) % ny, a = i * ny + j, b = (i + 1) * ny + j, c = (i + 1) * ny + jn, d = i * ny + jn;
-    if (out(a) && out(b) && out(c) && out(d)) continue;
-    index.push(a, b, d, b, c, d);
+    const o = (i * cj + j) * 6;
+    if (out(a) && out(b) && out(c) && out(d)) { index.fill(a, o, o + 6); continue; }
+    index[o] = a; index[o + 1] = b; index[o + 2] = d; index[o + 3] = b; index[o + 4] = c; index[o + 5] = d;
   }
+}
+function stockIndex(nx, ny, h, floor, wrap) {
+  const index = new Uint32Array((nx - 1) * cellRow(ny, wrap) * 6);
+  fillIndex(index, nx, ny, h, floor, wrap, 0, nx - 2);
   return index;
 }
-function refreshStock() {
+// Depth colours: from the stock top to the deepest cut the program makes (not the whole
+// block, so a 3 mm carving in 18 mm stock still uses every shade; on a bar, measured from
+// each ray's own uncut radius), in bands of a round step. Set by fixSpan once the whole
+// program has been cut, then kept while scrubbing.
+function deepestCut(h0, h) {
+  let d = 0;
+  for (let k = 0; k < h.length; k++) if (h0[k] - h[k] > d) d = h0[k] - h[k];
+  return d;
+}
+function fixSpan() {
   if (!grid) return;
-  if (grid.floor !== null) {
-    let through = 0;
-    for (let k = 0; k < grid.h.length; k++) if (grid.h[k] <= grid.floor + 1e-6) through++;
-    if (through !== grid.through) {
-      grid.through = through;
-      stockMesh.geometry.setIndex(stockIndex(grid.nx, grid.ny, grid.h, grid.floor, false));
+  grid.span = Math.max(0.5, deepestCut(grid.h0, grid.h));
+  markRows(0, grid.nx - 1); refreshStock(); buildLegend();
+}
+function bandStep(span) {
+  for (const s of [0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10, 20, 25, 50]) if (span / s <= 8) return s;
+  return 100;
+}
+function shade(depth, span, step) {     // 0 = stock top colour .. 1 = deepest colour; bands alternate
+  if (depth <= 0.005) return 0;
+  const f = 0.15 + 0.85 * Math.min(1, depth / span);
+  return Math.floor(depth / step - 1e-9) % 2 ? Math.min(1, f + 0.07) : f;
+}
+// Vertex normals by central differences across the grid (wrapping round the axis on rotary
+// stock), so only the rows near a cut need them again. They follow the triangles' winding,
+// like computeVertexNormals: up on box stock, inward on rotary stock, whose outside is the
+// back face (the double-sided material flips the normal there).
+function gridNormals(pos, nrm, nx, ny, wrap, i0, i1) {
+  for (let i = Math.max(0, i0); i <= Math.min(nx - 1, i1); i++) {
+    const ip = Math.min(nx - 1, i + 1), im = Math.max(0, i - 1);
+    for (let j = 0; j < ny; j++) {
+      const jp = wrap ? (j + 1) % ny : Math.min(ny - 1, j + 1), jm = wrap ? (j - 1 + ny) % ny : Math.max(0, j - 1);
+      const a = ip * ny + j, b = im * ny + j, c = i * ny + jp, d = i * ny + jm;
+      const ux = pos[3 * a] - pos[3 * b], uy = pos[3 * a + 1] - pos[3 * b + 1], uz = pos[3 * a + 2] - pos[3 * b + 2];
+      const vx = pos[3 * c] - pos[3 * d], vy = pos[3 * c + 1] - pos[3 * d + 1], vz = pos[3 * c + 2] - pos[3 * d + 2];
+      const nx_ = uy * vz - uz * vy, ny_ = uz * vx - ux * vz, nz_ = ux * vy - uy * vx;
+      const l = Math.hypot(nx_, ny_, nz_) || 1, o = 3 * (i * ny + j);
+      nrm[o] = nx_ / l; nrm[o + 1] = ny_ / l; nrm[o + 2] = nz_ / l;
     }
   }
-  const { nx, ny, x0, y0, res, base, h } = grid;
-  const pos = stockMesh.geometry.attributes.position.array, c = stockMesh.geometry.attributes.color.array;
+}
+function markRows(i0, i1) { grid.di0 = Math.min(grid.di0, i0); grid.di1 = Math.max(grid.di1, i1); grid.dirty = true; }
+function refreshStock() {
+  if (!grid || !grid.dirty) return;
+  const { nx, ny, x0, y0, res, h, span } = grid, step = bandStep(span);
+  const i0 = Math.max(0, grid.di0), i1 = Math.min(nx - 1, grid.di1);
+  grid.di0 = Infinity; grid.di1 = -Infinity; grid.dirty = false;
+  if (i0 > i1) return;
+  const geo = stockMesh.geometry, A = geo.attributes;
+  const pos = A.position.array, c = A.color.array;
   const top = col("--stock"), deep = col("--stock-cut");
-  const span = rotary ? base * 0.5 : Math.max(1, S.z[1] - S.z[0]);   // flat: shade over the full thickness
-  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+  for (let i = i0; i <= i1; i++) for (let j = 0; j < ny; j++) {
     const k = i * ny + j, v = h[k], o = k * 3;
     if (rotary) { const a = j / ny * 2 * Math.PI; pos[o] = x0 + i * res; pos[o + 1] = -v * Math.sin(a); pos[o + 2] = v * Math.cos(a); }
     else { pos[o] = x0 + i * res; pos[o + 1] = y0 + j * res; pos[o + 2] = v; }
-    const t = Math.min(1, (grid.h0[k] - v) / span), f = t > 0 ? 0.25 + 0.75 * t : 0;
+    const f = shade(grid.h0[k] - v, span, step);
     c[o] = top.r + (deep.r - top.r) * f; c[o + 1] = top.g + (deep.g - top.g) * f; c[o + 2] = top.b + (deep.b - top.b) * f;
   }
-  stockMesh.geometry.attributes.position.needsUpdate = true;
-  stockMesh.geometry.attributes.color.needsUpdate = true;
-  stockMesh.geometry.computeVertexNormals();
-  grid.dirty = false;
+  const n0 = Math.max(0, i0 - 1), n1 = Math.min(nx - 1, i1 + 1);    // a row's normals use its neighbours
+  gridNormals(pos, A.normal.array, nx, ny, rotary, n0, n1);
+  for (const at of [A.position, A.color, A.normal]) { at.updateRange = { offset: n0 * ny * 3, count: (n1 - n0 + 1) * ny * 3 }; at.needsUpdate = true; }
+  if (grid.floor !== null) {
+    const cj = cellRow(ny, false);
+    fillIndex(geo.index.array, nx, ny, h, grid.floor, false, i0 - 1, i1);
+    const c0 = Math.max(0, i0 - 1), c1 = Math.min(nx - 2, i1);
+    if (c1 >= c0) { geo.index.updateRange = { offset: c0 * cj * 6, count: (c1 - c0 + 1) * cj * 6 }; geo.index.needsUpdate = true; }
+  }
+}
+function buildLegend() {
+  const step = bandStep(grid.span), top = col("--stock"), deep = col("--stock-cut"), n = Math.ceil(grid.span / step);
+  const stops = [];
+  for (let b = 0; b < n; b++) {
+    const f = shade((b + 0.5) * step, grid.span, step), cc = top.clone().lerp(deep, f).getStyle();
+    stops.push(`${cc} ${b / n * 100}%`, `${cc} ${(b + 1) / n * 100}%`);
+  }
+  $("lbar").style.background = `linear-gradient(to right, ${stops.join(", ")})`;
+  $("lmax").textContent = `${grid.span.toFixed(grid.span < 10 ? 1 : 0)} mm deep`;
+  $("lstep").textContent = `bands every ${step} mm`;
 }
 function toolInfo(t) { return D.tools[t] || { diameter: 3, kind: "flat" }; }
 function profile(d, tl) {
@@ -328,43 +418,74 @@ function rayInterval(dx, phi, z, tl, y) {
   } else iv = meet(base, lin(c, z));
   return iv[0] <= iv[1] ? [Math.max(0, iv[0]), iv[1]] : null;
 }
-function stamp(p, tl) {     // remove material under the tool at p = [x, y, z, a]
-  const { nx, ny, x0, y0, res, h } = grid, r = tl.diameter / 2;
+function stamp(p, tl) {     // rotary stock: remove material under the tool at p = [x, y, z, a]
+  const { nx, ny, x0, res, h } = grid, r = tl.diameter / 2;
   const i0 = Math.max(0, Math.floor((p[0] - r - x0) / res)), i1 = Math.min(nx - 1, Math.ceil((p[0] + r - x0) / res));
   if (i0 > i1) return;
-  if (rotary) {
-    // each cell is material from the axis out to h along its ray; a ray whose outer end
-    // lies in the tool body is cut back to where it enters (same model as camcore-verify)
-    const ares = 360 / ny, d = 180 / Math.PI;
-    const lo = p[2] > 0 ? -Math.atan2(p[1] + r, p[2]) * d : -90, hi = p[2] > 0 ? -Math.atan2(p[1] - r, p[2]) * d : 90;
-    const span = Math.ceil((hi - lo) / 2 / ares) + 1;
-    const jc = Math.round(((((p[3] + (lo + hi) / 2) % 360) + 360) % 360) / ares);
-    for (let i = i0; i <= i1; i++) for (let dj = -span; dj <= span; dj++) {
-      const j = ((jc + dj) % ny + ny) % ny, dx = x0 + i * res - p[0], k = i * ny + j;
-      let da = (j * ares - p[3]) % 360; da = ((da + 540) % 360) - 180;
-      const iv = rayInterval(dx, da * Math.PI / 180, p[2], tl, p[1]);
-      if (iv && iv[0] < h[k] && iv[1] >= h[k] - 1e-9) { h[k] = Math.max(0, iv[0]); grid.dirty = true; }
-    }
-  } else {
-    const j0 = Math.max(0, Math.floor((p[1] - r - y0) / res)), j1 = Math.min(ny - 1, Math.ceil((p[1] + r - y0) / res));
-    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
-      const d = Math.hypot(x0 + i * res - p[0], y0 + j * res - p[1]);
-      if (d > r) continue;
-      const z = p[2] + profile(d, tl), k = i * ny + j;
-      if (z < h[k]) { h[k] = z; grid.dirty = true; }
-    }
+  // each cell is material from the axis out to h along its ray; a ray whose outer end
+  // lies in the tool body is cut back to where it enters (same model as camcore-verify)
+  const ares = 360 / ny, d = 180 / Math.PI;
+  const lo = p[2] > 0 ? -Math.atan2(p[1] + r, p[2]) * d : -90, hi = p[2] > 0 ? -Math.atan2(p[1] - r, p[2]) * d : 90;
+  const span = Math.ceil((hi - lo) / 2 / ares) + 1;
+  const jc = Math.round(((((p[3] + (lo + hi) / 2) % 360) + 360) % 360) / ares);
+  for (let i = i0; i <= i1; i++) for (let dj = -span; dj <= span; dj++) {
+    const j = ((jc + dj) % ny + ny) % ny, dx = x0 + i * res - p[0], k = i * ny + j;
+    let da = (j * ares - p[3]) % 360; da = ((da + 540) % 360) - 180;
+    const iv = rayInterval(dx, da * Math.PI / 180, p[2], tl, p[1]);
+    if (iv && iv[0] < h[k] && iv[1] >= h[k] - 1e-9) { h[k] = Math.max(0, iv[0]); markRows(i, i); }
   }
 }
-function cutSegment(i, t0, t1) {     // stamp move i between fractions t0..t1
-  if (!grid || M[i][0] !== 1) return;
-  const a = P(i - 1), b = P(i), tl = toolInfo(M[i][5]);
-  let len = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-  if (rotary) len = Math.hypot(len, (b[3] - a[3]) * Math.PI / 180 * grid.base);
-  const steps = Math.max(1, Math.ceil(len * (t1 - t0) / (grid.res * 0.7)));
-  for (let s = 1; s <= steps; s++) {
-    const t = t0 + (t1 - t0) * s / steps;
-    stamp(a.map((v, k) => v + (b[k] - v) * t), tl);
+// How far from its axis a tool cuts below a surface `below` mm above its tip.
+function reach(tl, below) {
+  const r = tl.diameter / 2;
+  if (below <= 0) return 0;
+  if (tl.kind === "vbit") return Math.min(r, below * Math.tan((tl.v_angle || 90) * Math.PI / 360));
+  if (tl.kind === "ball") return below >= r ? r : Math.sqrt(r * r - (r - below) * (r - below));
+  return r;
+}
+const SWEEP_DZ = 0.05;     // mm of Z change per piece of a sloped move
+// Box stock: the tool swept along the straight move a -> b, exactly in XY: each cell takes
+// the tool surface at its distance from the move (a V-groove gets its sharp bottom, which
+// stamping the tool at points along the move would leave ragged). A sloped move is cut
+// in pieces of at most SWEEP_DZ.
+function sweep(h, g, a, b, tl) {
+  const { nx, ny, x0, y0, res, base } = g;
+  const n = Math.max(1, Math.ceil(Math.abs(b[2] - a[2]) / SWEEP_DZ));
+  let r0 = Infinity, r1 = -Infinity;
+  for (let s = 0; s < n; s++) {
+    const t0 = s / n, t1 = (s + 1) / n;
+    const px = a[0] + (b[0] - a[0]) * t0, py = a[1] + (b[1] - a[1]) * t0, pz = a[2] + (b[2] - a[2]) * t0;
+    const qx = a[0] + (b[0] - a[0]) * t1, qy = a[1] + (b[1] - a[1]) * t1, qz = a[2] + (b[2] - a[2]) * t1;
+    const R = reach(tl, base - Math.min(pz, qz));
+    if (R <= 0) continue;
+    const i0 = Math.max(0, Math.floor((Math.min(px, qx) - R - x0) / res)), i1 = Math.min(nx - 1, Math.ceil((Math.max(px, qx) + R - x0) / res));
+    const j0 = Math.max(0, Math.floor((Math.min(py, qy) - R - y0) / res)), j1 = Math.min(ny - 1, Math.ceil((Math.max(py, qy) + R - y0) / res));
+    const ux = qx - px, uy = qy - py, L2 = ux * ux + uy * uy;
+    for (let i = i0; i <= i1; i++) {
+      const cx = x0 + i * res;
+      for (let j = j0; j <= j1; j++) {
+        const cy = y0 + j * res;
+        const t = L2 > 1e-12 ? Math.max(0, Math.min(1, ((cx - px) * ux + (cy - py) * uy) / L2)) : 0;
+        const d = Math.hypot(cx - px - t * ux, cy - py - t * uy);
+        if (d > R) continue;
+        const z = pz + (qz - pz) * t + profile(d, tl), k = i * ny + j;
+        if (z < h[k]) { h[k] = z; r0 = Math.min(r0, i); r1 = Math.max(r1, i); }
+      }
+    }
   }
+  return [r0, r1];        // rows changed
+}
+function cutSegment(i, t0, t1) {     // cut move i between fractions t0..t1
+  if (!grid || M[i][0] !== 1) return;
+  const a = P(i - 1), b = P(i), tl = toolInfo(M[i][5]), at = t => a.map((v, k) => v + (b[k] - v) * t);
+  if (!rotary) {
+    const [r0, r1] = sweep(grid.h, grid, at(t0), at(t1), tl);
+    if (r0 <= r1) markRows(r0, r1);
+    return;
+  }
+  const len = Math.hypot(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]), (b[3] - a[3]) * Math.PI / 180 * grid.base);
+  const steps = Math.max(1, Math.ceil(len * (t1 - t0) / (grid.res * 0.7)));
+  for (let s = 1; s <= steps; s++) stamp(at(t0 + (t1 - t0) * s / steps), tl);
 }
 
 // ---------- tool model -------------
@@ -403,12 +524,16 @@ D.issues.forEach(is => {
   const li = document.createElement("li"); li.className = is.level;
   const b = document.createElement("button");
   b.textContent = `Line ${is.line}: ${is.message}`;
-  b.onclick = () => { pause(); seekTime(cum[Math.max(0, is.move)] + (M[is.move] ? M[is.move][7] : 0)); };
-  li.append(b); ilist.append(li);
+  let s = null;
   if (is.move >= 0 && is.move < N) {
-    const s = new THREE.Mesh(new THREE.SphereGeometry(1.2, 12, 8), new THREE.MeshBasicMaterial({ color: col(is.level === "error" ? "--err" : "--warn") }));
+    s = new THREE.Mesh(new THREE.SphereGeometry(1.2, 12, 8), new THREE.MeshBasicMaterial({ color: col(is.level === "error" ? "--err" : "--warn") }));
     s.position.set(...pathPoint(P(is.move))); markers.add(s);
   }
+  b.onclick = () => {      // jump to the move and zoom in on where it happens
+    pause(); seekTime(cum[Math.max(0, is.move)] + (M[is.move] ? M[is.move][7] : 0));
+    if (s) { stockGroup.updateMatrixWorld(true); flyTo(s.getWorldPosition(new THREE.Vector3()), Math.min(dist, size * 0.3)); }
+  };
+  li.append(b); ilist.append(li);
 });
 
 // ---------- playback -------------
@@ -418,7 +543,7 @@ function moveAt(t) {     // index of move containing time t
   while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid + 1] <= t) lo = mid + 1; else hi = mid; }
   return lo;
 }
-function resetStock() { if (grid) { grid.h.set(grid.h0); grid.dirty = true; } applied = 0; appliedT = 0; }
+function resetStock() { if (grid) { grid.h.set(grid.h0); markRows(0, grid.nx - 1); } applied = 0; appliedT = 0; }
 function advanceCut(i, t) {
   if (i < applied || (i === applied && t < appliedT)) resetStock();
   while (applied < i) { cutSegment(applied, appliedT, 1); applied++; appliedT = 0; }
@@ -456,6 +581,7 @@ function tick(ts) {
     update();
   }
   last = ts;
+  stepFly(ts);
   render();
   requestAnimationFrame(tick);
 }
@@ -469,14 +595,61 @@ $("trapids").onchange = e => rapidLine.visible = e.target.checked;
 $("tpath").onchange = e => { feedLine.visible = e.target.checked; markers.visible = e.target.checked; };
 $("tstock").onchange = e => stockGroup.children.forEach(c => { if (c !== feedLine && c !== rapidLine && c !== markers) c.visible = e.target.checked; });
 
-// ---------- camera: simple orbit / pan / zoom -------------
-const box = new THREE.Box3().setFromObject(stockGroup);
+// ---------- camera: orbit / pan / zoom, preset views, zoom to a spot -------------
+// frame the stock (the toolpath reaches far beyond it: tool changes, safe heights)
+scene.updateMatrixWorld(true);        // with root's Z-up turn, or the box is in the wrong frame
+const box = new THREE.Box3().setFromObject(stockMesh || stockGroup);
 const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length() || 100;
-let az = -0.6, el = 0.75, dist = size * 1.25; const target = center.clone();
+let az = -0.6, el = 0.75, dist = size * 1.4; const target = center.clone();
+const EL_MAX = Math.PI / 2 - 1e-3;    // straight down still has a defined "up" (machine +Y)
+const HALF_FOV = Math.tan(20 * Math.PI / 180);
 function placeCamera() {
-  camera.position.set(target.x + dist * Math.cos(el) * Math.sin(az), target.y + dist * Math.sin(el), target.z + dist * Math.cos(el) * Math.cos(az));
+  const dx = Math.cos(el) * Math.sin(az), dy = Math.sin(el), dz = Math.cos(el) * Math.cos(az);
+  camera.position.set(target.x + dist * dx, target.y + dist * dy, target.z + dist * dz);
   camera.lookAt(target);
+  if (camera === ortho) {             // same visible height at the target as the perspective view
+    const hh = dist * HALF_FOV, w = stage.clientWidth, h = Math.max(1, stage.clientHeight);
+    ortho.left = -hh * w / h; ortho.right = hh * w / h; ortho.top = hh; ortho.bottom = -hh;
+    ortho.updateProjectionMatrix();
+  }
 }
+// machine +Y is three -Z: az 0 looks from the front (machine -Y) towards +Y, az pi/2 from +X
+const VIEWS = { "3d": [-0.6, 0.75, false], top: [0, EL_MAX, true], front: [0, 0, true], side: [Math.PI / 2, 0, true] };
+function setView(name) {
+  const [a, e, o] = VIEWS[name];
+  camera = o ? ortho : persp; az = a; el = e; dist = size * 1.4; target.copy(center);
+  if (o) {      // fit the stock's extent across and up the screen, with a margin
+    const b = box.getSize(new THREE.Vector3()), aspect = stage.clientWidth / Math.max(1, stage.clientHeight);
+    const [w, h] = name === "top" ? [b.x, b.z] : name === "front" ? [b.x, b.y] : [b.z, b.y];
+    dist = Math.max(h / 2, w / 2 / aspect) * 1.15 / HALF_FOV;
+  }
+  fly = null; placeCamera(); markView(name);
+}
+function markView(name) { document.querySelectorAll("#views button").forEach(b => b.classList.toggle("on", b.dataset.view === name)); }
+document.querySelectorAll("#views button").forEach(b => b.onclick = () => setView(b.dataset.view));
+// smooth move of the target and distance (instant with reduced motion)
+let fly = null;
+const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function flyTo(p, d) {
+  if (reduced) { target.copy(p); dist = d; placeCamera(); return; }
+  fly = { t0: performance.now(), from: target.clone(), to: p.clone(), d0: dist, d1: d };
+}
+function stepFly(now) {
+  if (!fly) return;
+  const u = Math.min(1, (now - fly.t0) / 350), e = u * u * (3 - 2 * u);
+  target.lerpVectors(fly.from, fly.to, e); dist = fly.d0 + (fly.d1 - fly.d0) * e; placeCamera();
+  if (u >= 1) fly = null;
+}
+// double-click: zoom in on the stock where it was clicked (else on the stock top plane)
+const caster = new THREE.Raycaster();
+renderer.domElement.addEventListener("dblclick", e => {
+  const r = renderer.domElement.getBoundingClientRect();
+  caster.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), camera);
+  let p = null;
+  if (stockMesh && stockMesh.visible) { const hit = caster.intersectObject(stockMesh)[0]; if (hit) p = hit.point; }
+  if (!p && S && !rotary) p = caster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -S.z[1]), new THREE.Vector3());
+  if (p) flyTo(p, Math.max(size * 0.02, dist * 0.35));
+});
 const ptrs = new Map(); let pinch = 0;
 renderer.domElement.addEventListener("contextmenu", e => e.preventDefault());
 renderer.domElement.addEventListener("pointerdown", e => { renderer.domElement.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, b: e.button }); });
@@ -488,26 +661,26 @@ renderer.domElement.addEventListener("pointermove", e => {
     const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
     if (pinch) dist *= pinch / d; pinch = d; pan(dx / 2, dy / 2);
   } else if (p.b === 2 || e.shiftKey) pan(dx, dy);
-  else { az -= dx * 0.008; el = Math.max(-1.5, Math.min(1.5, el + dy * 0.008)); }
-  placeCamera();
+  else { az -= dx * 0.008; el = Math.max(-EL_MAX, Math.min(EL_MAX, el + dy * 0.008)); markView(null); }
+  fly = null; placeCamera();
 });
 function pan(dx, dy) {
   const s = dist * 0.0015, right = new THREE.Vector3(), up = new THREE.Vector3();
   camera.matrix.extractBasis(right, up, new THREE.Vector3());
   target.addScaledVector(right, -dx * s).addScaledVector(up, dy * s);
 }
-renderer.domElement.addEventListener("wheel", e => { e.preventDefault(); dist *= Math.exp(e.deltaY * 0.001); placeCamera(); }, { passive: false });
+renderer.domElement.addEventListener("wheel", e => { e.preventDefault(); fly = null; dist *= Math.exp(e.deltaY * 0.001); placeCamera(); }, { passive: false });
 function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
+  renderer.setSize(w, h, false); persp.aspect = w / Math.max(1, h); persp.updateProjectionMatrix(); placeCamera();
 }
 function render() { scene.background = col("--scene"); renderer.render(scene, camera); }
 new ResizeObserver(resize).observe(stage);
-resize(); placeCamera();
+resize(); markView("3d");
 
 // open on the finished result so the first view shows what the program makes
-if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) $("speed").value = "1000";
-seekTime(total);
+if (reduced) $("speed").value = "1000";
+seekTime(total); fixSpan();
 requestAnimationFrame(tick);
 })();
 </script>

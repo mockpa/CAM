@@ -1,8 +1,8 @@
-"""3-axis drop-cutter and waterline on a mesh, through OpenCAMLib.
+"""3-axis drop-cutter and waterline on a mesh (rust/surface_kernel).
 
 The model frame is the machine frame (Z up, Z0 at the stock top for flat
-jobs). OpenCAMLib computes cutter locations exactly against the triangles
-for flat, ball, bull-nose and cone cutters:
+jobs). Cutter locations are computed exactly against the triangles for flat,
+ball, bull-nose and cone cutters (see rust/surface_kernel/src/lib.rs):
 
 - drop-cutter: for each sampled (x, y) the lowest tip Z where the cutter
   touches the mesh but does not cut into it (or the floor, where it meets
@@ -12,135 +12,83 @@ for flat, ball, bull-nose and cone cutters:
   cutter would cut into the model at that Z.
 
 The cutter is treated as infinitely long (shank as wide as the cutter), so
-material anywhere above the tip blocks it. `leave` grows the cutter by
-OpenCAMLib's exact offset (a ball by `leave`, a flat end into a bull nose
-with corner radius `leave`, ...); the returned Z is the real tip, so the
-real cutter stays `leave` off the model in every direction.
+material anywhere above the tip blocks it. `leave` grows the cutter by its
+exact offset (a ball by `leave`, a flat end into a bull nose with corner
+radius `leave`, a V-bit into a ball-tipped cone ...); the returned Z is the
+real tip, so the real cutter stays `leave` off the model in every direction.
+A negative `leave` shrinks it (see `cutter`).
 
-Vertical triangles: OpenCAMLib decides whether a contact lies on a facet
-with a barycentric test in the XY plane, which divides by the facet's XY
-area: for a vertical facet that is zero (plus rounding noise), so contacts
-far off the facet pass and waterline contours grow spikes many mm long.
-Such facets are left out of what OpenCAMLib sees, which is exact for closed
-meshes: every cutter widens (or stays as wide) going up, so if it touches a
-vertical facet inside, it also touches the point straight above on the
-facet's upper boundary, an edge that a non-vertical triangle shares and
-OpenCAMLib tests correctly. The mesh is also moved next to the origin
-first, which keeps OpenCAMLib's arithmetic well conditioned. Waterline
-contours are then checked point by point with the drop-cutter (`_check_loop`).
-
-OpenCAMLib is only on conda-forge for current Pythons (see environment.yml),
-so it is imported when first needed.
+The kernel replaced OpenCAMLib, which gave the same heights to 1e-9 mm for
+flat, ball and bull-nose cutters but let cones (V-bits) sink up to 0.05 mm into
+relief meshes, and took milliseconds per point on large meshes (tests compare
+the two where OpenCAMLib is installed). Waterline contours are still checked
+point by point with the drop-cutter (`_check_loop`).
 """
 from __future__ import annotations
 
-import contextlib
 import math
-import os
-import tempfile
-from dataclasses import dataclass
 
 import numpy as np
 
 from .tools import Tool
 
-LENGTH = 1000.0              # mm: cutter length for OpenCAMLib, longer than any model
-MIN_XY_AREA = 1e-8           # mm^2: triangles with less XY area are left out (see the module docstring)
 CHECK_TOL = 0.01             # mm: at a waterline point the cutter is at most this far off touching the model,
                              # clear of it or inside it (see _check_loop)
-_SURF: dict = {}             # id(mesh) -> (mesh, Surf)
+_MESHES: dict = {}           # id(mesh) -> (mesh, kernel mesh)
 
 
-def ocl():
+def kernel():
     try:
-        import opencamlib
+        import camcore_surface_kernel
     except ImportError as e:  # pragma: no cover - depends on the environment
-        raise RuntimeError("3-axis 3D operations need OpenCAMLib: install the conda environment "
-                           "(conda env create -p .conda -f environment.yml)") from e
-    return opencamlib
+        raise RuntimeError("3-axis 3D operations need camcore_surface_kernel: pip install ./rust/surface_kernel "
+                           "(needs a Rust toolchain)") from e
+    return camcore_surface_kernel
 
 
-@contextlib.contextmanager
-def _quiet():
-    """Swallow OpenCAMLib's C++ diagnostics on stdout (debug prints, destructor
-    messages)."""
-    try:
-        fd = os.dup(1)
-    except OSError:          # no real stdout (embedded): nothing to redirect
-        yield
-        return
-    with tempfile.TemporaryFile() as sink:
-        os.dup2(sink.fileno(), 1)
-        try:
-            yield
-        finally:
-            _flush_c_stdout()        # C++ output still in the stdio buffer goes to the sink too
-            os.dup2(fd, 1)
-            os.close(fd)
-
-
-def _flush_c_stdout():
-    try:
-        import ctypes
-        ctypes.CDLL(None).fflush(None)
-    except (OSError, AttributeError):   # pragma: no cover - no C library to flush
-        pass
-
-
-@dataclass
-class Surf:
-    stl: object              # OpenCAMLib STLSurf, in coordinates shifted by -shift
-    shift: np.ndarray        # (3,) machine = OpenCAMLib + shift
-    dropped: int             # vertical triangles left out
-
-
-def stl_surf(mesh) -> Surf:
-    """The mesh as an OpenCAMLib STLSurf near the origin, without vertical
-    triangles (cached per mesh object)."""
-    hit = _SURF.get(id(mesh))
+def kernel_mesh(mesh):
+    """The mesh as the kernel's Mesh (cached per mesh object)."""
+    hit = _MESHES.get(id(mesh))
     if hit is not None and hit[0] is mesh:
         return hit[1]
-    o = ocl()
-    tri = np.asarray(mesh.triangles, dtype=float)
-    shift = np.round((tri.reshape(-1, 3).min(axis=0) + tri.reshape(-1, 3).max(axis=0)) / 2)
-    tri = tri - shift
-    e1, e2 = tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]
-    keep = np.abs(e1[:, 0] * e2[:, 1] - e1[:, 1] * e2[:, 0]) / 2 >= MIN_XY_AREA
-    s = o.STLSurf()
-    P = o.Point
-    for a, b, c in tri[keep]:
-        s.addTriangle(o.Triangle(P(*a), P(*b), P(*c)))
-    surf = Surf(s, shift, int((~keep).sum()))
-    if len(_SURF) > 8:
-        _SURF.clear()
-    _SURF[id(mesh)] = (mesh, surf)
-    return surf
+    km = kernel().Mesh(np.ascontiguousarray(mesh.vertices, dtype=float),
+                       np.ascontiguousarray(mesh.faces, dtype=np.int64))
+    if len(_MESHES) > 8:
+        _MESHES.clear()
+    _MESHES[id(mesh)] = (mesh, km)
+    return km
 
 
-def cutter(tool: Tool, leave: float = 0.0):
-    """OpenCAMLib cutter for a camcore tool, grown by `leave` (exact offset). A negative
-    `leave` gives the cutter shrunk by -leave (its inner offset): the same kind of cutter
-    2 x -leave narrower, its corner radius -leave smaller; `tip_shift` says how far its
-    tip sits from the real one."""
-    o = ocl()
-    d = tool.diameter
-    if leave < 0:
-        s = -leave
-        if s >= tool.radius:
-            raise ValueError(f"cannot shrink a {d:g} mm cutter by {s:g} mm")
-        d -= 2 * s
-    if tool.kind == "flat":
-        c = o.CylCutter(d, LENGTH)
-    elif tool.kind == "ball":
-        c = o.BallCutter(d, LENGTH)
-    elif tool.kind == "bull":
-        r = tool.corner_radius + min(leave, 0.0)
-        c = o.BullCutter(d, r, LENGTH) if r > 1e-9 else o.CylCutter(d, LENGTH)
-    elif tool.kind == "vbit":
-        c = o.ConeCutter(d, math.radians(tool.v_angle) / 2, LENGTH)
-    else:
+def cutter(tool: Tool, leave: float = 0.0) -> tuple:
+    """The kernel's cutter (cone, a, l, k) for a camcore tool grown by `leave`: a disc
+    (flat, ball, bull) or a cone (V-bit, slope k = 1 / tan(half angle)) of radius a,
+    grown by a ball of radius l (its exact offset). A negative `leave` gives the cutter
+    shrunk by -leave (its inner offset): the same kind of cutter 2 x -leave narrower,
+    its corner radius -leave smaller; `tip_shift` says how far its tip sits from the
+    real one."""
+    R = tool.radius
+    k = 1 / math.tan(math.radians(tool.v_angle) / 2) if tool.kind == "vbit" else 0.0
+    if tool.kind not in ("flat", "ball", "bull", "vbit"):
         raise ValueError(f"tool kind {tool.kind!r} not supported for 3D")
-    return c.offsetCutter(leave) if leave > 0 else c
+    if leave >= 0:
+        if tool.kind == "flat":
+            return (False, R, leave, 0.0)
+        if tool.kind == "ball":
+            return (False, 0.0, R + leave, 0.0)
+        if tool.kind == "bull":
+            return (False, R - tool.corner_radius, tool.corner_radius + leave, 0.0)
+        return (True, R, leave, k)
+    s = -leave
+    if s >= R:
+        raise ValueError(f"cannot shrink a {tool.diameter:g} mm cutter by {s:g} mm")
+    if tool.kind == "flat":
+        return (False, R - s, 0.0, 0.0)
+    if tool.kind == "ball":
+        return (False, 0.0, R - s, 0.0)
+    if tool.kind == "bull":
+        r = tool.corner_radius - s
+        return (False, R - tool.corner_radius, r, 0.0) if r > 1e-9 else (False, R - s, 0.0, 0.0)
+    return (True, R - s, 0.0, k)
 
 
 def tip_shift(tool: Tool, leave: float) -> float:
@@ -154,22 +102,10 @@ def tip_shift(tool: Tool, leave: float) -> float:
 
 def drop_points(mesh, tool: Tool, xy: np.ndarray, floor: float, leave: float = 0.0) -> np.ndarray:
     """Tip Z for each (x, y) in an (n, 2) array (never below `floor`); `leave` as in `cutter`."""
-    o = ocl()
-    # OpenCAMLib keeps raw pointers to the surface and cutter: hold them for the run
-    surf, cut = stl_surf(mesh), cutter(tool, leave)
-    sx, sy, sz = surf.shift
     k = tip_shift(tool, leave)
-    bdc = o.BatchDropCutter()
-    bdc.setSTL(surf.stl)
-    bdc.setCutter(cut)
-    for x, y in np.asarray(xy, dtype=float):
-        bdc.appendPoint(o.CLPoint(float(x - sx), float(y - sy), float(floor - k - sz)))
-    with _quiet():
-        bdc.run()
-    cl = bdc.getCLPoints()
-    if len(cl) != len(xy):
-        raise RuntimeError("OpenCAMLib returned a different number of points than it was given")
-    return np.maximum(np.array([p.z for p in cl]) + sz + k, floor)
+    xy = np.ascontiguousarray(np.asarray(xy, dtype=float).reshape(-1, 2))
+    z = kernel_mesh(mesh).drop(cutter(tool, leave), xy, float(floor - k))
+    return np.maximum(z + k, floor)
 
 
 def drop_path(mesh, tool: Tool, polyline, floor: float, sampling: float, leave: float = 0.0,
@@ -232,24 +168,13 @@ def crop(mesh, x0: float, y0: float, x1: float, y1: float):
 def waterline(mesh, tool: Tool, z: float, sampling: float, leave: float = 0.0, keep=None) -> list[np.ndarray]:
     """Closed loops [(n, 2) arrays, first point not repeated] of tool-centre
     positions at tip height z where the cutter (grown by `leave`) touches the
-    mesh. Fibers are `sampling` apart. Only loops `keep(loop)` accepts (all by
-    default) are returned, and every point of those is checked (_check_loop)."""
-    o = ocl()
+    mesh, from a grid `sampling` apart (each point on the contact to 1e-10 mm).
+    Only loops `keep(loop)` accepts (all by default) are returned, and every
+    point of those is checked (_check_loop)."""
     if sampling <= 0:
         raise ValueError("sampling must be > 0")
-    surf, cut = stl_surf(mesh), cutter(tool, leave)   # held for the run (raw pointers inside)
-    sx, sy, sz = surf.shift
-    w = o.Waterline()
-    w.setSTL(surf.stl)
-    w.setCutter(cut)
-    w.setZ(float(z - leave - sz))
-    w.setSampling(sampling)
-    with _quiet():
-        w.run()
-        loops = w.getLoops()
-        del w                 # its destructor prints too
-    out = sorted((_canonical(np.array([(p.x + sx, p.y + sy) for p in loop])) for loop in loops if len(loop) >= 3),
-                 key=lambda lp: tuple(lp[0]))
+    raw = kernel_mesh(mesh).waterline(cutter(tool, leave), float(z - tip_shift(tool, leave)), float(sampling))
+    out = sorted((_canonical(np.array(loop)) for loop in raw if len(loop) >= 3), key=lambda lp: tuple(lp[0]))
     if keep is not None:
         out = [lp for lp in out if keep(lp)]
     for lp in out:
@@ -258,8 +183,8 @@ def waterline(mesh, tool: Tool, z: float, sampling: float, leave: float = 0.0, k
 
 
 def _canonical(loop: np.ndarray) -> np.ndarray:
-    """The loop started at its lowest (X, Y) point: OpenCAMLib's threads start
-    loops anywhere, and the same model must always give the same program."""
+    """The loop started at its lowest (X, Y) point, so the same model always gives
+    the same program whatever order the contour was traced in."""
     i = min(range(len(loop)), key=lambda k: (loop[k, 0], loop[k, 1]))
     return np.roll(loop, -i, axis=0)
 
@@ -278,5 +203,5 @@ def _check_loop(mesh, tool: Tool, loop: np.ndarray, z: float, leave: float):
     bad = (shrunk > z + 1e-6) | (grown < z - 1e-6)
     if bad.any():
         x, y = loop[np.argmax(bad)]
-        raise RuntimeError(f"OpenCAMLib waterline at Z{z:g} has {int(bad.sum())} point(s) off the model "
+        raise RuntimeError(f"waterline at Z{z:g} has {int(bad.sum())} point(s) off the model "
                            f"contact, the first at X{x:.3f} Y{y:.3f}; refusing to use it")

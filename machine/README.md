@@ -12,6 +12,9 @@ from the build plan, not from a running machine:
   and `camcore check` runs the sim with that table
 - the G54 offset (20, 20, -120) is a placeholder
 
+`printnc_sim.ini` keeps the planned speeds and accelerations (the sim GUI runs with them); `camcore check`
+raises them for its sim run only, which then takes seconds instead of the program's machine time.
+
 `a_max_diameter` limits the stock diameter in `camcore rotary-wizard`; verify does not check it yet.
 
 `"body"` describes the machine body for the collision check in camcore-verify and for the sim

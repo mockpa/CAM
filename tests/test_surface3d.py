@@ -1,4 +1,4 @@
-"""3-axis 3D from a mesh: OpenCAMLib drop-cutter and waterline, roughing and finishing (guide step 11)."""
+"""3-axis 3D from a mesh: drop-cutter and waterline (camcore.surface), roughing and finishing (guide step 11)."""
 import json
 import math
 from collections import defaultdict
@@ -146,7 +146,7 @@ def test_bull_nose_profile():
         Tool("b", 6, "bull", corner_radius=3.5)
 
 
-# --- drop-cutter and waterline (OpenCAMLib) --------------------------------------
+# --- drop-cutter and waterline ---------------------------------------------------
 
 @pytest.fixture(scope="module")
 def block():
@@ -207,8 +207,8 @@ def boss():
 @pytest.mark.parametrize("tool", [BALL3, EM6, BULL6])
 @pytest.mark.parametrize("z", [-4.0, -6.0, -8.5])
 def test_waterline_beside_vertical_facets_has_no_spikes(boss, tool, z):
-    # OpenCAMLib's XY inside-facet test divides by zero on vertical facets; unfiltered,
-    # these contours had points up to 12 mm off the boss
+    # OpenCAMLib's XY inside-facet test divided by zero on vertical facets; unfiltered,
+    # these contours had points up to 12 mm off the boss (kept as a guard)
     for sampling in (0.05, 0.1, 0.13):
         (loop,) = surface.waterline(boss, tool, z, sampling)
         r = np.hypot(loop[:, 0] - 24, loop[:, 1] - 12)

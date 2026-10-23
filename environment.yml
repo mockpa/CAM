@@ -1,7 +1,8 @@
-# Development environment. OpenCAMLib (3-axis 3D drop-cutter and waterline) is
-# only built for current Python versions on conda-forge, not on PyPI, so the
-# project uses a conda env:
+# Development environment. OpenCAMLib is no longer used by camcore (its 3-axis
+# drop-cutter and waterline are rust/surface_kernel now); tests/test_surface_kernel.py
+# compares against it, and it is only built for current Pythons on conda-forge:
 #   conda env create -p .conda -f environment.yml && .conda/bin/pip install -e .[dev]
+#   .conda/bin/pip install ./rust/verify_kernel ./rust/surface_kernel   (needs Rust)
 channels:
   - conda-forge
 dependencies:

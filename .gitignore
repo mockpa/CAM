@@ -4,3 +4,5 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .conda/
+rust/verify_kernel/target/
+rust/surface_kernel/target/

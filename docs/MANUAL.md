@@ -50,6 +50,7 @@ Once, in the `camcore` folder:
 conda env create -p .conda -f environment.yml
 conda activate ./.conda
 pip install -e .[dev]                 # includes the desktop app
+pip install ./rust/verify_kernel ./rust/surface_kernel   # needs Rust (https://rustup.rs): faster verify, the 3D drop-cutter
 cd sim && docker build -t camcore-sim . && cd ..     # the LinuxCNC simulator
 ```
 

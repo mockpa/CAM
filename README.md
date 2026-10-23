@@ -129,8 +129,10 @@ Step-by-step walkthroughs with screenshots: [tutorials](docs/tutorials/README.md
   The job file is a normal job: edit it and run `camcore check` on it again.
 - **3-axis 3D from STL**: `surface_rough` and `surface_finish` on a model in machine coordinates (box stock,
   Z0 on top; a model takes `"xy_start": [x, y]` and `"z_top": z` to place it). Cutter locations come from
-  [OpenCAMLib](https://github.com/aewallin/opencamlib) (conda-forge, see `environment.yml`), exact against the
-  triangles for flat, ball, bull-nose (`"kind": "bull", "corner_radius": 1`) and V cutters. See
+  camcore's own drop-cutter and waterline (`rust/surface_kernel`), exact against the triangles for flat, ball,
+  bull-nose (`"kind": "bull", "corner_radius": 1`) and V cutters. It replaced OpenCAMLib, which gives the same
+  heights for flat, ball and bull-nose cutters but let V-bits sink up to 0.05 mm into reliefs and took about an
+  hour for a 300 x 200 mm relief at 0.5 mm (now under a minute). See
   `examples/relief_job.json` (made by `examples/make_relief.py`).
   - `surface_rough`: Z levels `step_down` apart from the stock top down to the model plus `stock_to_leave`
     (`floor` overrides the lowest level). Each level is the boundary (default: the stock) minus the waterline of
@@ -142,9 +144,8 @@ Step-by-step walkthroughs with screenshots: [tutorials](docs/tutorials/README.md
   - `surface_finish` `"strategy": "waterline"`: climb-milled contours at Z levels `step_down` apart over
     `z_range`, each entered by a ramp along the contour. Best on steep walls; it leaves flat areas alone, so
     pair it with a raster pass (limit both with `"boundary": [x0, y0, x1, y1]`, the tool centre's area).
-  - OpenCAMLib mishandles exactly vertical triangles (contours grew spikes many mm long), so they are left out
-    of what it sees, which is exact for closed meshes, and every waterline point is checked with the
-    drop-cutter before use: a bad contour stops the job. Use closed (watertight) STL files.
+  - Every waterline point is checked with the drop-cutter before use: a bad contour stops the job. Use closed
+    (watertight) STL files.
 - **Post**: LinuxCNC (default: T/M6 + G43 tool changes, A rotary axis, G64 blending) and GRBL 1.1 (pauses with `M0` on tool change, no A axis).
 - **Arc output** (LinuxCNC): runs of feed moves become G2/G3 arcs (helical where Z changes) when an arc stays
   within 0.01 mm of every original segment, at most 180 deg per arc. The sign example shrinks from about 16000 to
@@ -211,9 +212,10 @@ The app edits an ordinary job file; it has no CAM logic of its own.
 
 ## Run it
 ```bash
-conda env create -p .conda -f environment.yml   # Python + OpenCAMLib (conda-forge only)
+conda env create -p .conda -f environment.yml   # Python (+ OpenCAMLib, the 3D tests' reference; conda-forge only)
 conda activate ./.conda
 pip install -e .[dev]
+pip install ./rust/verify_kernel ./rust/surface_kernel   # needs Rust: verify's stock model (faster), the 3D drop-cutter (needed)
 camcore examples/sign_job.json -o sign.ngc --preview sign_preview.svg
 camcore examples/wrap_job.json -o wrap.ngc      # wrapped rotary
 camcore-verify examples/sign.ngc --machine examples/machine.json --tools examples/tools.json --view sign_view.html
@@ -237,7 +239,7 @@ camcore/
   project.py    job files as the desktop app edits them (no Qt)
   gui/          camcore-gui: PySide6 desktop app (editing and display only)
   cylmap.py     cylindrical heightmap r(x, A) of a mesh and its tool dilation
-  surface.py    3-axis drop-cutter and waterline on a mesh (OpenCAMLib wrapper)
+  surface.py    3-axis drop-cutter and waterline on a mesh (rust/surface_kernel)
   job.py        JSON job format -> toolpaths
   preview.py    SVG preview
   verify.py     virtual dry run: machine + stock model and checks

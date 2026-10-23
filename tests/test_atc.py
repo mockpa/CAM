@@ -43,6 +43,7 @@ class FakeDocker:
     def __call__(self, cmd, **kw):
         work = Path(cmd[cmd.index("-v") + 1].split(":")[0])
         self.seen["tbl"] = (work / "tool.tbl").read_text()
+        self.seen["ini"] = (work / "machine.ini").read_text()
         self.stdout = iter(self.out.splitlines(keepends=True))
         self.returncode = self.code
         return self
@@ -57,7 +58,7 @@ class FakeDocker:
 def sim_setup(tmp_path, monkeypatch, fake):
     from camcore import check
     (tmp_path / "tool.tbl").write_text("T1 P1 D3.175 ;real\n")
-    (tmp_path / "sim.ini").write_text("[EMC]\n")
+    (tmp_path / "sim.ini").write_text("[EMC]\n[JOINT_0]\nMAX_VELOCITY = 50\nMAX_LIMIT = 1035\n")
     monkeypatch.setattr(check.subprocess, "Popen", fake)
     monkeypatch.setattr(check.shutil, "which", lambda name: "/usr/bin/docker")
     return {"work_offset": {"x": 0, "y": 0, "z": 0}, "sim": {"ini": "sim.ini"}, "tool_table": "tool.tbl"}
@@ -69,6 +70,8 @@ def test_sim_uses_the_real_tool_table(tmp_path, monkeypatch):
     mdata = sim_setup(tmp_path, monkeypatch, fake)
     ok, _ = check.run_sim("M2\n", mdata, tmp_path / "m.json", {"x": {"number": 4, "diameter": 1}}, "img")
     assert ok and fake.seen["tbl"] == "T1 P1 D3.175 ;real\n"
+    # the check's sim gets the speed limits raised (check.fast_sim_ini), nothing else
+    assert fake.seen["ini"] == "[EMC]\n[JOINT_0]\nMAX_VELOCITY = 30000\nMAX_LIMIT = 1035\n"
 
 
 def test_sim_progress_lines_go_to_the_callback_not_the_log(tmp_path, monkeypatch):

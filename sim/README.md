@@ -58,5 +58,8 @@ model shows the spindle and tool above the stock at the chuck.
 
 ## Make it match your machine
 - Copy your real axis limits into `config/camcore_sim.ini` (or mount your own INI as `/work/machine.ini`).
+  `camcore check` mounts the machine profile's INI with the speed and acceleration limits raised
+  (`camcore.check.fast_sim_ini`): LinuxCNC only slows down to meet them, so they decide how long
+  the sim takes, not whether the program passes. The soft limits stay as they are.
 - Set your G54 work offset in `config/sim.var` (parameters 5221 to 5224 = X, Y, Z, A).
 - Put your real tool table in `/work/tool.tbl` to check against it.

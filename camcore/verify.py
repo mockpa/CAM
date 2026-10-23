@@ -43,11 +43,18 @@ any Y (indexed 3+1 work), the rays are cut by its body exactly at any offset.
 
 This is an independent model, not LinuxCNC's own interpreter; for that, run
 the program through the LinuxCNC sim container in sim/ as well.
+
+The stock model's inner loop (Stock.interference, Stock.cut, Stock.sweep) runs
+in the compiled camcore_verify_kernel (rust/verify_kernel) when it is installed,
+a port of the Python methods here, which stay the reference:
+tests/test_verify_kernel.py replays programs through both and compares them.
+CAMCORE_VERIFY_PYTHON=1 forces the Python code.
 """
 from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,6 +62,13 @@ from pathlib import Path
 import numpy as np
 
 from .body import Body, hull, overlaps
+
+try:
+    import camcore_verify_kernel as KERNEL
+except ImportError:          # not built: the Python reference does the same, slower
+    KERNEL = None
+if os.environ.get("CAMCORE_VERIFY_PYTHON"):
+    KERNEL = None
 
 BODY_STEP = 1.0               # mm between machine body samples along a move
 ARC_RADIUS_TOLERANCE = 0.002   # mm; LinuxCNC rejects arcs whose end radius differs more
@@ -163,6 +177,15 @@ class Stock:
                 self.h[:] = bar_radii(spec, -np.sin(psi), np.cos(psi))[None, :]
         else:
             raise ValueError(f"unknown stock type {self.kind}")
+        # the grid and the uncut stock as camcore_verify_kernel takes them
+        self._grid = (self.rotary, float(self.x0), float(getattr(self, "y0", 0.0)), float(res),
+                      float(getattr(self, "a_res", 0.0)))
+        if self.kind == "box":
+            self._surf = (0, float(self.top), 0.0, 0.0, 0.0, 0.0)
+        elif self.kind == "cylinder":
+            self._surf = (1, float(self.radius), 0.0, 0.0, 0.0, 0.0)
+        else:
+            self._surf = (2, 0.0, *map(float, spec["y"]), *map(float, spec["z"]))
 
     def surface(self, y, a) -> float:
         """Top of the uncut stock at machine Y = y with the part at A = a."""
@@ -303,6 +326,48 @@ class Stock:
         return np.zeros_like(d)
 
     def interference(self, x, y_or_a, z, tool: dict, y: float = 0.0) -> float:
+        """How far material pokes into the cutter body at this position (<= 0: clear);
+        see _interference_py."""
+        if KERNEL is not None:
+            return KERNEL.interference_at(self.h, self._grid, _tool_key(tool), x, y_or_a, z, y)
+        return self._interference_py(x, y_or_a, z, tool, y)
+
+    def cut(self, x, y_or_a, z, tool: dict, y: float = 0.0):
+        """Remove what the tool body occupies at this position; see _cut_py."""
+        if KERNEL is not None:
+            KERNEL.cut_at(self.h, self._grid, _tool_key(tool), x, y_or_a, z, y)
+        else:
+            self._cut_py(x, y_or_a, z, tool, y)
+
+    def sweep(self, start, end, steps: int, tool: dict, stop: bool, flute=None):
+        """The stock part of one straight move from start to end (x, y, z, a): at
+        steps s = 1..steps (t = s / steps), where material reaches more than 0.01 mm
+        into the tool, cut it; with `stop`, end at the first such step instead,
+        without cutting. With a `flute` length, also find the first cutting step
+        deeper below the uncut surface than flute + 1e-6.
+        Returns (first step in material or 0, first too deep step or 0, its depth)."""
+        flute = float(flute) if flute else math.nan
+        if KERNEL is not None:
+            return KERNEL.sweep(self.h, self._grid, self._surf, _tool_key(tool), tuple(map(float, start)),
+                                tuple(map(float, end)), int(steps), bool(stop), flute)
+        hit = deep_step = 0
+        deep = 0.0
+        for s in range(1, steps + 1):
+            t = s / steps
+            x, y, z, a = (p0 + (p1 - p0) * t for p0, p1 in zip(start, end))
+            u = a if self.rotary else y
+            if self._interference_py(x, u, z, tool, y) > 0.01:
+                hit = hit or s
+                if stop:
+                    break
+                if not math.isnan(flute) and not deep_step:
+                    d = self.surface(y, a) - z
+                    if d > flute + 1e-6:
+                        deep_step, deep = s, d
+                self._cut_py(x, u, z, tool, y)
+        return hit, deep_step, deep
+
+    def _interference_py(self, x, y_or_a, z, tool: dict, y: float = 0.0) -> float:
         """How far material pokes into the cutter body at this position (<= 0: clear).
         Box stock: y_or_a is Y. Rotary stock: y_or_a is A and y the tool's Y.
 
@@ -329,7 +394,7 @@ class Stock:
             return -math.inf
         return float((self.h[idx] - (z + self._profile(d, tool)))[m].max())
 
-    def cut(self, x, y_or_a, z, tool: dict, y: float = 0.0):
+    def _cut_py(self, x, y_or_a, z, tool: dict, y: float = 0.0):
         r = tool.get("diameter", 3) / 2
         if self.rotary:
             # a ray whose outer end lies in the body is cut back to where it enters;
@@ -348,6 +413,15 @@ class Stock:
         idx, d, _ = c
         sub = self.h[idx]
         self.h[idx] = np.where(d <= r, np.minimum(sub, z + self._profile(d, tool)), sub)
+
+
+_KIND_CODES = {"ball": 1, "bull": 2, "vbit": 3}        # anything else cuts as a flat end
+
+
+def _tool_key(tool: dict) -> tuple:
+    """A tool as camcore_verify_kernel takes it: (kind, radius, corner radius, V angle)."""
+    return (_KIND_CODES.get(tool.get("kind"), 0), tool.get("diameter", 3) / 2,
+            float(tool.get("corner_radius", 0.0)), float(tool.get("v_angle", 90)))
 
 
 def bar_radii(spec: dict, uy, uz):
@@ -390,6 +464,14 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
     obstacles = body.obstacles(rotary) if body is not None else []
     known = set()              # axes set since the start or the last tool change
     spindle_parts = {}
+    group_hulls = {}           # id(part list) -> (list, its hull, the parts but the tool, their hull)
+
+    def hulls(grp):
+        """A part group's bounding box, and the same without the tool (the groups never change)."""
+        if id(grp) not in group_hulls:
+            rest = [p for p in grp if p.name != "tool"]
+            group_hulls[id(grp)] = (grp, hull(grp), rest, hull(rest) if rest else None)
+        return group_hulls[id(grp)][1:]
 
     def once(level, n, msg, key):
         if key not in warned:
@@ -443,7 +525,7 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
             """Where the tool tip is (work coordinates) a fraction f along the move."""
             return " ".join(f"{k.upper()}{pos[k] + (new[k] - pos[k]) * f:.2f}" for k in "xyz")
         for grp, a, b in groups:
-            lo, hi = hull(grp)
+            lo, hi = hulls(grp)[0]
             for ob in obstacles:
                 if not all(min(a[i], b[i]) + lo[i] < ob.hi[i] and ob.lo[i] < max(a[i], b[i]) + hi[i]
                            for i in range(3)):
@@ -466,11 +548,11 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
             slo = (stock.x0, stock.y0, stock.bottom)
             shi = (stock.x0 + stock.h.shape[0] * stock.res, stock.y0 + stock.h.shape[1] * stock.res, stock.top)
         for grp, a, b in groups:
-            grp = [p for p in grp if p.name != "tool"]
+            _, grp, box = hulls(grp)
             if not grp:
                 continue
             a, b = a - w, b - w
-            lo, hi = hull(grp)
+            lo, hi = box
             if not all(min(a[i], b[i]) + lo[i] < shi[i] and slo[i] < max(a[i], b[i]) + hi[i] for i in range(3)):
                 continue
             seg = steps if not rotary else max(steps, math.ceil(abs(new["a"] - pos["a"]) / 360 * 2 * math.pi
@@ -523,33 +605,36 @@ def run(text: str, machine: Machine, stock_spec: dict | None, res: float = 0.5):
             if rotary:
                 horiz = math.hypot(horiz, math.radians(new["a"] - pos["a"]) * max(math.hypot(new["y"], new["z"]), 1))
             plunging = kind == "feed" and pos["z"] - new["z"] > horiz + 1e-9   # steeper than 45 deg down
-            for s in range(1, steps + 1):
-                if retract:      # moving straight up out of the cut never hits anything
-                    break
-                t = s / steps
-                p = {k: pos[k] + (new[k] - pos[k]) * t for k in pos}
-                u = p["a"] if rotary else p["y"]
-                if stock.interference(p["x"], u, p["z"], tinfo, p["y"]) > 0.01:
-                    if kind == "rapid":
-                        issues.append(Issue("error", n, f"CRASH: rapid move into material at "
-                                            f"X{p['x']:.2f} {'A' if rotary else 'Y'}{u:.2f} Z{p['z']:.2f}"))
-                        break
-                    if tool == 0:
-                        once("error", n, "cutting with no tool loaded (missing T M6)", "notool")
-                    if not spindle:
-                        issues.append(Issue("error", n, "CRASH: cutting with the spindle stopped"))
-                        break
-                    if plunging and not tinfo.get("center_cutting"):
-                        once("error", n, f"T{tool} plunges into material but is not marked center_cutting "
-                             f"(ramp or helix in, or mark the tool)", ("plunge", tool))
-                    if not offset_on:
-                        once("warning", n, f"cutting with T{tool} but no G43 tool length offset", ("g43", tool))
-                    fl = tinfo.get("flute_length")
-                    surface = stock.surface(p["y"], p["a"])
-                    if fl and surface - p["z"] > fl + 1e-6:
-                        once("warning", n, f"T{tool} cuts {surface - p['z']:.2f} mm deep, "
-                             f"more than its {fl} mm flute length", ("flute", tool))
-                    stock.cut(p["x"], u, p["z"], tinfo, p["y"])
+            if retract:          # moving straight up out of the cut never hits anything
+                return
+            fl = tinfo.get("flute_length")
+            # step through the move: cut where the tool is in material; a rapid, or
+            # cutting with the spindle stopped, ends at the first such step
+            hit, deep_step, deep = stock.sweep(tuple(pos[k] for k in "xyza"), tuple(new[k] for k in "xyza"),
+                                               steps, tinfo, stop=kind == "rapid" or not spindle,
+                                               flute=fl if ("flute", tool) not in warned else None)
+            if not hit:
+                return
+            t = hit / steps
+            p = {k: pos[k] + (new[k] - pos[k]) * t for k in pos}
+            u = p["a"] if rotary else p["y"]
+            if kind == "rapid":
+                issues.append(Issue("error", n, f"CRASH: rapid move into material at "
+                                    f"X{p['x']:.2f} {'A' if rotary else 'Y'}{u:.2f} Z{p['z']:.2f}"))
+                return
+            if tool == 0:
+                once("error", n, "cutting with no tool loaded (missing T M6)", "notool")
+            if not spindle:
+                issues.append(Issue("error", n, "CRASH: cutting with the spindle stopped"))
+                return
+            if plunging and not tinfo.get("center_cutting"):
+                once("error", n, f"T{tool} plunges into material but is not marked center_cutting "
+                     f"(ramp or helix in, or mark the tool)", ("plunge", tool))
+            if not offset_on:
+                once("warning", n, f"cutting with T{tool} but no G43 tool length offset", ("g43", tool))
+            if deep_step:
+                once("warning", n, f"T{tool} cuts {deep:.2f} mm deep, more than its {fl} mm flute length",
+                     ("flute", tool))
 
     for n, w, raw in parse(text):
         gs = [int(g) if g == int(g) else g for g in w.get("G", [])]

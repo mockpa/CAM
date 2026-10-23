@@ -105,8 +105,8 @@ Regression guards: the byte-for-byte fixtures stay, `verify` imports nothing fro
 Reliefwerk's known failures (1200 mm sheet, finishing without roughing, straight plunge) are tested.
 
 ## Risks
-- OpenCAMLib on a large relief is slow (measured in phase 2: 35 min / 3 GB for 300 x 200 mm): decimate the
-  STL to the finishing tolerance, tile by `boundary`, and look at why roughing makes 520 000 moves.
+- OpenCAMLib on a large relief was slow (measured in phase 2: 35 min / 3 GB for 300 x 200 mm). Replaced by
+  `rust/surface_kernel` (2026-10-23): the default 300 x 200 mm relief now checks in about 40 s without the sim.
 - Machine values are provisional: the sheet limit always comes from the machine JSON.
 - Many lamellas per sheet crowd the app's op list: group profiles per op if `profile` allows it.
 - Tabs on the glued bottom edge: keep them and say "sand flush" in the paperwork.

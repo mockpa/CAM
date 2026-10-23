@@ -2,7 +2,7 @@ import json
 import shutil
 from pathlib import Path
 
-from camcore.check import check, sim_var
+from camcore.check import check, fast_sim_ini, sim_var
 
 ROOT = Path(__file__).parent.parent
 EX = ROOT / "examples"
@@ -53,3 +53,24 @@ def test_job_without_stock_is_refused(tmp_path):
 def test_sim_g54_comes_from_the_machine_json():
     m = json.loads(PRINTNC.read_text())
     assert sim_var(m["work_offset"]) == (PRINTNC.parent / "printnc_sim.var").read_text()
+
+
+def test_check_sim_raises_only_the_speed_limits():
+    """The check's sim runs with speed and acceleration limits raised (LinuxCNC only
+    slows down to meet them); soft limits, homing and everything else stay as they are."""
+    ini = (ROOT / "machine" / "printnc_sim.ini").read_text()
+    fast = fast_sim_ini(ini)
+    old, new = ini.splitlines(), fast.splitlines()
+    assert len(old) == len(new)
+    changed = {(a, b) for a, b in zip(old, new) if a != b}
+    assert changed == {("MAX_LINEAR_VELOCITY = 283", "MAX_LINEAR_VELOCITY = 30000"),
+                       ("MAX_VELOCITY = 283", "MAX_VELOCITY = 30000"),
+                       ("MAX_ACCELERATION = 2000", "MAX_ACCELERATION = 1000000"),
+                       ("MAX_ACCELERATION = 360000", "MAX_ACCELERATION = 1000000")}
+    # 2 x MAX_LINEAR_VELOCITY ([DISPLAY], [TRAJ]), 6 linear axes/joints x 2 keys, A's 2 accelerations
+    assert sum(a != b for a, b in zip(old, new)) == 2 + 12 + 2
+    assert "MAX_VELOCITY = 36000" in new and "MAX_ANGULAR_VELOCITY = 36000" in new   # already above
+    assert "MAX_FEED_OVERRIDE = 50.0" in new and "MAX_LIMIT = 1035" in new
+    # only in speed sections, comments and other keys untouched
+    assert fast_sim_ini("[FOO]\nMAX_VELOCITY = 5\n[JOINT_0]\nMAX_VELOCITY = 5 ; x\r\n") == \
+        "[FOO]\nMAX_VELOCITY = 5\n[JOINT_0]\nMAX_VELOCITY = 30000 ; x\r\n"

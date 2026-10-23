@@ -46,6 +46,35 @@ def sim_var(work_offset: dict) -> str:
     return "".join(f"{k}\t{v:.6f}\n" for k, v in vals.items())
 
 
+SIM_MAX_VELOCITY = 30000.0        # mm/s (deg/s for A): floor for the check's sim only
+SIM_MAX_ACCELERATION = 1e6        # mm/s^2 (deg/s^2)
+_SPEED_KEY = re.compile(r"^(\s*)(MAX_(?:LINEAR_|ANGULAR_)?(VELOCITY|ACCELERATION))(\s*=\s*)([-+0-9.eE]+)(.*)$")
+
+
+def fast_sim_ini(text: str) -> str:
+    """The sim INI for `camcore check`: every axis, joint and trajectory speed and
+    acceleration limit raised to at least SIM_MAX_VELOCITY / SIM_MAX_ACCELERATION.
+
+    The check asks whether LinuxCNC accepts and runs the whole program (soft limits,
+    interpreter and motion errors). LinuxCNC slows every move down to meet these
+    limits, so they only decide how long the sim takes: with the PrintNC's real ones
+    the sign example took 187 s, with these 28 s. The sim GUI keeps the real INI."""
+    section, out = "", []
+    for line in text.splitlines(keepends=True):
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            section = s[1:-1].upper()
+        body = line.rstrip("\r\n")
+        m = _SPEED_KEY.match(body)
+        if m and (section in ("TRAJ", "DISPLAY") or section.startswith(("AXIS_", "JOINT_"))):
+            floor = SIM_MAX_VELOCITY if m[3] == "VELOCITY" else SIM_MAX_ACCELERATION
+            value = max(float(m[5]), floor)
+            text_value = f"{value:.0f}" if value.is_integer() else repr(value)
+            line = f"{m[1]}{m[2]}{m[4]}{text_value}{m[6]}{line[len(body):]}"
+        out.append(line)
+    return "".join(out)
+
+
 def sim_tool_table(mdata: dict, machine_path: Path, library: dict) -> str:
     """The controller's real tool.tbl if the machine names one (as on the machine), else one from the library."""
     if mdata.get("tool_table"):
@@ -67,7 +96,7 @@ def run_sim(gcode: str, mdata: dict, machine_path: Path, library: dict, image: s
         work = Path(tmp)
         work.chmod(0o755)                     # the container user must be able to read it
         (work / "program.ngc").write_text(gcode)
-        shutil.copy(machine_path.parent / sim["ini"], work / "machine.ini")
+        (work / "machine.ini").write_text(fast_sim_ini((machine_path.parent / sim["ini"]).read_text()))
         (work / "machine.var").write_text(sim_var(work_offset or mdata["work_offset"]))
         (work / "tool.tbl").write_text(sim_tool_table(mdata, machine_path, library))
         p = subprocess.Popen(["docker", "run", "--rm", "-v", f"{work}:/work", image, "check", "/work/program.ngc"],
@@ -124,6 +153,10 @@ def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: s
 
     gcode = motions = stock_sim = issues = None
     machine = machine_from_library(Machine.load(machine_path), library)
+    from . import verify
+    if verify.KERNEL is None:
+        log("note: verify runs in pure Python, several times slower (CAMCORE_VERIFY_PYTHON is set, or "
+            "camcore_verify_kernel is not installed: pip install ./rust/verify_kernel)")
     try:
         paths = run_job(job, base)
         gcode = job_post(job).emit(paths)
@@ -155,7 +188,7 @@ def check(job_path, out_dir="out", machine_path=None, sim: bool = True, image: s
             fail(f"inlay fit: {type(e).__name__}: {e}")
 
     if ok and sim:
-        log("running the LinuxCNC sim (a few minutes for ~10000 moves)...")
+        log("running the LinuxCNC sim (about a minute for ~10000 moves)...")
         total = len(gcode.splitlines())
         sim_ok, sim_log = run_sim(gcode, mdata, machine_path, library, image, machine.offset_for(stock),
                                   progress=(lambda n: progress(n, total)) if progress else None)

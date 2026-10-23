@@ -1,7 +1,7 @@
 """3-axis machining of a mesh: Z-level roughing, raster and waterline finishing.
 
 The model is in machine coordinates (Z0 at the stock top, see job.build_model).
-Cutter locations come from OpenCAMLib (camcore.surface): drop-cutter for
+Cutter locations come from camcore.surface (rust/surface_kernel): drop-cutter for
 raster passes, waterline loops for roughing levels and waterline finishing.
 Both are exact against the triangles at the sampled points; between samples a
 path is a straight move, and decimation drops points the straight move passes

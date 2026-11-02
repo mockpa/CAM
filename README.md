@@ -1,5 +1,10 @@
 # camcore
 
+> **Safety first.** This software generates G-code that moves real machines. Always check every program before
+> cutting: run `camcore check`, watch the preview, do an air cut above the stock, and keep a hand on the
+> E-stop. Machine profiles in `machine/` are examples, not your machine. The software comes **without any
+> warranty**; see LICENSE. You alone are responsible for your machine, your tools and your safety.
+
 Python core for a CAM application ([the plan](docs/dev/PLAN.md)): 2.5D, V-carve, 3-axis 3D and 4-axis (wrapped, indexed and continuous rotary) toolpaths with LinuxCNC (and GRBL) output.
 
 **New here? Read the [user manual](docs/MANUAL.md)**: a first job start to finish, the desktop app, your own
@@ -252,3 +257,6 @@ sim/            LinuxCNC simulator container
 
 ## Not yet
 rest machining after 3D roughing, a 2D preview of shapes in the app, the machine body in the HTML viewer.
+
+## License
+GPL-3.0-or-later, see [LICENSE](LICENSE). Third-party components: [THIRD_PARTY.md](THIRD_PARTY.md).

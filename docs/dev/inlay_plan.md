@@ -13,8 +13,8 @@
 > - **Fit check details**: verify grid 0.2 mm, programs replayed as G1, only inside the plug frame. It also
 >   fails when the walls stand apart: a 90 deg plug in a 60 deg pocket seats at the right height on the rim.
 
-Put this file in your CAM repo as `docs/inlay_plan.md`, then tell Claude Code:
-"Implement docs/inlay_plan.md on a new branch called inlay. Follow CLAUDE.md. Use plan mode first."
+Put this file in your CAM repo as `docs/dev/inlay_plan.md`, then tell Claude Code:
+"Implement docs/dev/inlay_plan.md on a new branch called inlay. Follow CLAUDE.md. Use plan mode first."
 
 Checked against mockpa/CAM at commit `ce5e2d1` (2026-10-15, the user manual). Nothing below is implemented yet.
 
@@ -27,7 +27,7 @@ Checked against mockpa/CAM at commit `ce5e2d1` (2026-10-15, the user manual). No
   `"medial"` needs `entry: "plunge"` and a centre-cutting V-bit.
 - Shapes in `build_shape` (`camcore/job.py` line 21): rect, circle, polygon, svg, dxf, union, difference.
   There is no mirror shape. The SVG importer applies `transform`, so `scale(-1,1)` in an SVG works as a workaround today.
-- `docs/PLAN.md` lists inlays as "later". `docs/MANUAL.md` line 189 mentions inlays only under V-carve.
+- `docs/dev/PLAN.md` lists inlays as "later". `docs/MANUAL.md` line 189 mentions inlays only under V-carve.
 
 ## The geometry
 Use the same V-bit for both parts so the walls match.
@@ -70,7 +70,7 @@ Use the same V-bit for both parts so the walls match.
 - Docs:
   - README feature entry.
   - A short "Inlays" section in `docs/MANUAL.md`: which board gets which part, glue, clamp, plane off, test in MDF first.
-  - Tick the item off in `docs/PLAN.md`.
+  - Tick the item off in `docs/dev/PLAN.md`.
 
 ## Other gaps found while reading the repo (separate tasks, not part of this one)
 - **Drilling** (`camcore/ops/drill.py`):
@@ -85,7 +85,7 @@ Use the same V-bit for both parts so the walls match.
   - the PrintNC profile is provisional (travel, G54, gauge lengths, tool.tbl)
   - verify does not check `a_max_diameter`
   - with the rotary axis 75 mm above the spoilboard, the tool only reaches about 63 mm above the axis, so the planned 150 mm swing does not fit
-- **Reliefwerk:** its integration plan is a separate document (`cam/reviews/reliefwerk_integration_plan.pdf` in the project files).
+- **Reliefwerk:** its integration plan is `docs/dev/relief_plan.md`.
 
 ## Test environment note
 The test suite uses pytest-qt and PySide6. On a headless box without `libEGL.so.1`, pytest stops at startup with an INTERNALERROR.

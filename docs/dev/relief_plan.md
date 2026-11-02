@@ -3,8 +3,8 @@
 > **Status:** phases 1-6 (height field, 3D relief job, lamella geometry, nesting and board jobs, pins and
 > paperwork, `camcore relief`, the app's relief dialog): all done on branch `relief`, with `profile` tabs at
 > given points. Open: speed of large 3D reliefs (see Risks).
-> Source: Paul's Reliefwerk 1.0 (`reliefwerk.zip`: reliefwerk.py, rw_core.py, rw_modes.py, rw_preview.py),
-> reviewed 2026-10-18. Decisions (all defaults taken): Reliefwerk is Paul's own code and may go in the
+> Source: the author's Reliefwerk 1.0 (`reliefwerk.zip`: reliefwerk.py, rw_core.py, rw_modes.py, rw_preview.py),
+> reviewed 2026-10-18. Decisions (all defaults taken): Reliefwerk is the author's own code and may go in the
 > public repo; pins get paperwork only (no back-board job); lamella tabs stay on the bottom edge; the
 > standalone Tk app is retired once phase 7 ships.
 

@@ -21,7 +21,7 @@ Check: `python3 --version`, `docker run --rm hello-world` and `claude --version`
 ## 1. Get the code onto your machine
 
 1. Download `camcore.tar.gz` from the project thread (it is attached to the message with this guide).
-2. Unpack it and make it a git repo (the roadmap is included as `docs/PLAN.md`):
+2. Unpack it and make it a git repo (the roadmap is included as `docs/dev/PLAN.md`):
 
 ```bash
 mkdir -p ~/cnc && cd ~/cnc

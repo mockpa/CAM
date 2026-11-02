@@ -1,6 +1,6 @@
 # camcore
 
-Python core for a CAM application ([the plan](docs/PLAN.md)): 2.5D, V-carve, 3-axis 3D and 4-axis (wrapped, indexed and continuous rotary) toolpaths with LinuxCNC (and GRBL) output.
+Python core for a CAM application ([the plan](docs/dev/PLAN.md)): 2.5D, V-carve, 3-axis 3D and 4-axis (wrapped, indexed and continuous rotary) toolpaths with LinuxCNC (and GRBL) output.
 
 **New here? Read the [user manual](docs/MANUAL.md)**: a first job start to finish, the desktop app, your own
 drawings, rotary work, the simulator, taking a program to the machine, and a reference of every job key.

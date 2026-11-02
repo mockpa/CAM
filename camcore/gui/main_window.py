@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """camcore-gui main window: edit a job, preview it, export it through `camcore check`."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Continuous rotary machining of a mesh (4th axis, A around X).
 
 The model is placed with the rotary axis on its X axis (see stl.place). Both

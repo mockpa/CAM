@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Tool library editor: the tools of the job's library file and their feeds and
 speeds per material. Edits a working copy; Save writes the file only if it
 passes the checks load_library makes."""

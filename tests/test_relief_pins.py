@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Pins and paperwork (relief plan phase 5)."""
 import csv
 import math

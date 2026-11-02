@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """JSON job files: stock, tools, shapes and an ordered list of operations."""
 from __future__ import annotations
 

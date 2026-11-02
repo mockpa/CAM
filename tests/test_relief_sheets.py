@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Lamella boards (relief plan phase 4): nesting, interlocking, sheet checks, one job per board."""
 import itertools
 import json

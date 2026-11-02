@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """GRBL 1.1 post. GRBL has no tool changer; a change of tool pauses with M0."""
 from __future__ import annotations
 

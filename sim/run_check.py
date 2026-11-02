@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Run one program through the LinuxCNC simulator and fail on any error.
 
 LinuxCNC itself enforces soft limits, tool table lookups, G-code syntax and

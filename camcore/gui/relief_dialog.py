@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """The relief designer as a dialog. Same questions, suggestions and checks as
 `camcore relief` (relief.cli.QUESTIONS), with a shaded preview of the prepared
 relief; it writes the same files, and the main window then runs `camcore check`

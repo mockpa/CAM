@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Top-down SVG preview of toolpaths: cuts shaded by depth, rapids dashed."""
 from __future__ import annotations
 

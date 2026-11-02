@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Command line: camcore JOB.json [-o out.nc], camcore check JOB.json (see check.py),
 camcore rotary-wizard MODEL.stl (see wizard.py), camcore relief INPUT (see relief/cli.py),
 camcore inlay-fit POCKET.json PLUG.json

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Lamellas: a height field cut into strips that stand on edge side by side (relief plan phase 3).
 
 Ported from Reliefwerk's `lam_model` / `lam_outline`. The artwork (W x H mm, the

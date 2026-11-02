@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """camcore-gui: PySide6 desktop app on top of the library (guide step 10).
 
 Only editing and display live here. Toolpaths, G-code and checks come from the

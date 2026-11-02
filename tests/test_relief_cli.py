@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """camcore relief (relief plan phase 6): questions, flags, outputs and the check gate."""
 import csv
 import json

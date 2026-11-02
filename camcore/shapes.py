@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Shared 2D import helpers: closed rings to polygons, open pieces to closed chains."""
 from __future__ import annotations
 

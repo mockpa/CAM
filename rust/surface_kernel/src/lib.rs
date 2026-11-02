@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Drop-cutter and waterline on triangle meshes, for camcore's 3-axis 3D operations
 //! (camcore/surface.py). Replaces OpenCAMLib.
 //!

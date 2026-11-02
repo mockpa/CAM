@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """verify's cylinder stock: material along rays from the axis, cut by the real tool body."""
 import math
 

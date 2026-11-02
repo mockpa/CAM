@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Wrapped rotary (4th axis, A around X).
 
 Design flat in X/Y, where Y runs around the circumference of the stock

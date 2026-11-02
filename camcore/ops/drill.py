@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Drilling (peck) cycles emitted as plain moves so every post can handle them."""
 from __future__ import annotations
 

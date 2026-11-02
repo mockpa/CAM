@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Adaptive (constant engagement) pocket clearing.
 
 Contour-parallel clearing cuts a full-width slot on its first loop and much

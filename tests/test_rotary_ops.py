@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Rotary roughing and finishing from a mesh (guide step 8B)."""
 import json
 import math

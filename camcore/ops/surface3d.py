@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """3-axis machining of a mesh: Z-level roughing, raster and waterline finishing.
 
 The model is in machine coordinates (Z0 at the stock top, see job.build_model).

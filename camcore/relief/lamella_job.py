@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Lamella sheets: parts nested onto boards, one ordinary job per board (relief plan phase 4).
 
 Replaces Reliefwerk's `lam_layout` / `lam_gcode_sheet`. Each lamella becomes a

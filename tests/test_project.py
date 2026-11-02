@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """The desktop app's project model (no Qt needed)."""
 import json
 import shutil

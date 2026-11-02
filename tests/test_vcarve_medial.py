@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Medial-axis V-carving: the axis itself, no gouging, depth accuracy against the
 ideal V-groove (measured by verify's independent stock model) and the offset
 method, the depth cap, and the example job."""

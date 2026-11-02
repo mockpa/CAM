@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Small editing widgets shared by the panels."""
 from __future__ import annotations
 

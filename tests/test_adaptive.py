@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Adaptive pocket clearing: the cut width it keeps (measured independently on
 a fine grid, against the offset pocket), clearing and wall clearance, boring
 again behind a narrow neck, the fallback for parts too narrow for a helix,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from .base import PostProcessor
 from .grbl import GrblPost
 from .linuxcnc import LinuxCncPost

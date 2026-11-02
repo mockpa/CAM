@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Packing rectangles onto sheets (relief plan phase 4), ported from Reliefwerk's MaxRects.
 
 MaxRects with the best-short-side-fit rule: every free rectangle of a sheet is kept

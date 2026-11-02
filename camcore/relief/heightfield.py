@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Height fields for relief designs: an image or STL in, a `HeightField` out.
 
 Ported from Reliefwerk's `rw_core` (load_image, load_stl, prepare, sample). A raw

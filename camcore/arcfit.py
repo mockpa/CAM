@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Fit G2/G3 arcs to runs of short line segments.
 
 A run of points P0..Pn (feed moves at one feed rate) is replaced, greedily from

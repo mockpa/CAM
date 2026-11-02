@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Indexed 3+1: 2.5D / V-carve ops on faces turned up by fixed A angles."""
 import json
 import math

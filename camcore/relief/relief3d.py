@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """3D relief: a height field milled as a surface out of a board (relief plan phase 2).
 
 Replaces Reliefwerk's `fr_*` (its own roughing and finishing G-code). The design

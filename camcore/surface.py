@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """3-axis drop-cutter and waterline on a mesh (rust/surface_kernel).
 
 The model frame is the machine frame (Z up, Z0 at the stock top for flat

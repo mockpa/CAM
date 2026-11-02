@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Paperwork for relief designs (relief plan phase 5): parts lists, cut lists and plans.
 
 Lamellas: `NAME_parts.csv` (every part: size, where it goes in the artwork, where it is

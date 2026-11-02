@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """camcore rotary-wizard (guide step 8C)."""
 import json
 import math

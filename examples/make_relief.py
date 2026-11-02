@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Writes examples/relief.stl: a 60 x 40 mm block for 3-axis 3D work.
 
 Its top is a relief between Z-9 and Z0: a smooth dome (raster finishing), a

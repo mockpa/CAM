@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """camcore_verify_kernel (rust/verify_kernel) against verify's Python reference.
 
 The kernel is a port of Stock._interference_py / _cut_py / sweep's Python loop.

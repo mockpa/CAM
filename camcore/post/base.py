@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Post-processor base: turns Toolpath IR into G-code text."""
 from __future__ import annotations
 

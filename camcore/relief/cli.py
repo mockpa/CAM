@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """camcore relief INPUT: a relief design from an image or STL (relief plan phase 6).
 
 Asks for the design (lamellas, a 3D relief or pins), writes ordinary jobs plus the

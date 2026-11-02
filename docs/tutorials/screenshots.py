@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Regenerates the tutorial screenshots in docs/tutorials/img/.
 
     python docs/tutorials/screenshots.py              # every picture (Docker for the sim ones), about 5 min

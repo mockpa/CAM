@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Inlays: mirror shape, pocket and plug depths, validation, and the fit check."""
 import json
 import math

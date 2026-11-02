@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Lamella geometry (relief plan phase 3): strips of a height field as part outlines."""
 import numpy as np
 import pytest

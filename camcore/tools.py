@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Cutting tool definitions. All dimensions in mm."""
 from __future__ import annotations
 

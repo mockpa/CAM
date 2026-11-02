@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Cylindrical heightmap of a mesh for continuous rotary machining.
 
 The rotary axis is X, Z0 is on its centreline, and the model frame is the

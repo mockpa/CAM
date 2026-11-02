@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Machine body: the part-against-part geometry, verify's collision checks
 (obstacles, stock, gantry, rotary unit), the position after a tool change,
 the wizard's jaw reach, and the vismach scene the sim GUI draws."""

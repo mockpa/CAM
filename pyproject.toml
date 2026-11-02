@@ -3,6 +3,8 @@ name = "camcore"
 version = "0.1.0"
 description = "CAM core: 2.5D, V-carve (and later 3D / 4-axis) toolpaths with G-code post-processing"
 requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "camcore/vendor/three.LICENSE"]
 dependencies = ["shapely>=2.0", "numpy>=1.24", "scipy>=1.10", "ezdxf>=1.1", "trimesh>=4", "pillow>=10"]
 
 [project.optional-dependencies]
@@ -15,7 +17,7 @@ camcore-verify = "camcore.verify_cli:main"
 camcore-gui = "camcore.gui:main"
 
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-data]

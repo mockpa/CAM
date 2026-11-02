@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """LinuxCNC post (RS274NGC). Supports the A rotary axis and real tool changes.
 
 Tool numbers come from `Tool.number` when set, otherwise tools are numbered in

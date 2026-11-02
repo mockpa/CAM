@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """V-carve inlays: a pocket in the base board and a mirrored plug in the insert board,
 cut with the same V-bit so their walls match.
 

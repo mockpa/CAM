@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Entry moves: how the tool gets down to cutting depth.
 
 ramp   descend along the contour itself, no steeper than ramp_angle (degrees)

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """rust/surface_kernel (camcore_surface_kernel), the drop-cutter and waterline behind
 camcore.surface, against independent references:
 

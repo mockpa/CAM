@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Pocket clearing: contour-parallel loops (method="offset") or adaptive
 (constant engagement, method="adaptive", see ops/adaptive.py)."""
 from __future__ import annotations

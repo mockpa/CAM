@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Writes examples/pawn.stl: a 48 mm chess pawn lying on the X axis (base at X0).
 
 python examples/make_pawn.py

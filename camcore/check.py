@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """camcore check JOB.json: the one gate every program goes through.
 
 Generates the G-code, dry-runs it with camcore-verify (machine JSON + the job's

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Write a LinuxCNC tool table (.tbl) from a camcore tool library."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """V-carving.
 
 method="offset": inset the shape by increasing distances r; the tool tip on the

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Profile paths along a closed contour, parametrised by distance s along it.
 
 The cut is a chain of pieces with a linear base depth z(s) (ramps down, flat

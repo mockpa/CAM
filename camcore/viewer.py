@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Animated 3D viewer: one self-contained HTML file that plays a G-code program
 with live material removal, A-axis rotation, tool changes and check results."""
 from __future__ import annotations

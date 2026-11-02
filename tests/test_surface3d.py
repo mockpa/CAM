@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """3-axis 3D from a mesh: drop-cutter and waterline (camcore.surface), roughing and finishing (guide step 11)."""
 import json
 import math

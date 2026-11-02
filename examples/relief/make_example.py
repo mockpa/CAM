@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Writes the relief examples (relief plan): waves.png, Reliefwerk's built-in
 sample at 240 x 160 px, and from it waves3d_job.json + waves3d.stl, a 3D relief
 of 100 x 60 mm, 8 mm deep, inside a 5 mm frame, out of a 12 mm board, and

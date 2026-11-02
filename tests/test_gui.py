@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """camcore-gui (guide step 10), driven offscreen with pytest-qt."""
 import json
 import os

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """STL import for rotary work (trimesh).
 
 Units are mm. The model frame is the machine frame at A = 0: the rotary axis

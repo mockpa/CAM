@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Machine body: what moves with the spindle and the gantry, and what is fixed
 on the table, as axis-aligned boxes and cylinders along Z or X.
 

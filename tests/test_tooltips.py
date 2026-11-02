@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Every operation parameter, job key and tool field the app shows has a tooltip."""
 from camcore.project import CUTTING_KEYS, OP_KINDS, STRUCT_KEYS, op_params, tool_fields
 from camcore.tooltips import CUTTING_TIPS, JOB_TIPS, OP_TIPS, PARAM_TIPS, STRUCT_TIPS, TOOL_TIPS, param_tip

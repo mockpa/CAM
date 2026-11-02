@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Medial axis of a polygon, for medial-axis V-carving.
 
 The medial axis is where the largest inscribed circles have their centres; a

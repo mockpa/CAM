@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """The editing panels of the main window: job settings, shapes and models,
 operations. They edit Project.job in place and emit `changed`; none of them
 knows how toolpaths are made."""

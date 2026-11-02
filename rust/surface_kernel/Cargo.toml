@@ -2,6 +2,7 @@
 name = "camcore_surface_kernel"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-3.0-or-later"
 description = "Drop-cutter and waterline on triangle meshes for camcore's 3-axis 3D operations"
 publish = false
 

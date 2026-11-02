@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """DXF importer (ezdxf): LINE, ARC, CIRCLE, LWPOLYLINE (with bulges), POLYLINE,
 SPLINE, ELLIPSE, and block INSERTs (exploded). Curves are flattened with chords
 within CHORD_TOL, so the post can fit G2/G3 arcs back onto them.

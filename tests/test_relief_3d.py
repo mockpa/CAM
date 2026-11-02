@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """3D relief jobs (relief plan phase 2): height field to an STL block and a surface job."""
 import json
 from pathlib import Path

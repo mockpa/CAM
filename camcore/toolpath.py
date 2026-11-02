@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Toolpath intermediate representation (IR).
 
 Operations emit a Toolpath; post-processors, simulation and estimators consume it.

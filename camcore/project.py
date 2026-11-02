@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Projects for the desktop app (camcore-gui). A project file is an ordinary
 job JSON: the app edits it, and `camcore check` on the saved file is the only
 way it makes a program. Nothing here imports Qt, so the model is tested without

@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # check FILE         : headless run through LinuxCNC; exits non-zero on any LinuxCNC error
 # gui [FILE [SCENE]] : AXIS GUI in your browser at http://localhost:6080/vnc.html, plus the
 #                      vismach machine model if SCENE (default FILE's NAME_scene.json from

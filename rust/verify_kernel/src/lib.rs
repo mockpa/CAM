@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Compiled inner loop of `camcore.verify.Stock`: the box heightmap and the rotary
 //! radius map, cut and probed by the exact tool bodies.
 //!

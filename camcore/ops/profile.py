@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Profile (contour) cutting: inside, outside or on the line."""
 from __future__ import annotations
 

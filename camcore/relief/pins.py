@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Pins: a height field as a grid of square, round or hex pins cut to stepped lengths (relief plan phase 5).
 
 Ported from Reliefwerk's `pin_model`. No machining: the output is paperwork (a cut list

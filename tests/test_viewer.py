@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """The viewer's stock model, run in node: grid size, hole cells, the V-groove sweep,
 normals and the depth colours."""
 import json

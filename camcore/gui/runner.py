@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Runs `camcore check` off the GUI thread, streaming its log lines.
 
 The cyclic garbage collector runs in whichever thread happens to allocate. Left on

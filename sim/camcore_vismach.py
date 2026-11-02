@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Vismach model of the machine for the AXIS GUI of the sim.
 
 Draws the scene `camcore check` writes next to each program (NAME_scene.json,

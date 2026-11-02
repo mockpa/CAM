@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Tooltip texts for the desktop app: what each job key, operation parameter and
 tool field means. Plain data (no Qt), so tests can check that every parameter
 of every operation has one. Units: mm and degrees, as everywhere.

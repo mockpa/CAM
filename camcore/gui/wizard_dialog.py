@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """The rotary wizard as a dialog. Same questions, suggestions and checks as
 `camcore rotary-wizard` (wizard.QUESTIONS); it writes the same job file, and
 the main window then runs `camcore check` on it."""

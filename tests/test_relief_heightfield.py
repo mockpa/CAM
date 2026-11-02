@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Relief height fields (relief plan phase 1): image and STL in, HeightField out."""
 import math
 

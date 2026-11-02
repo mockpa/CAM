@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """SVG importer: path (M L H V C S Q T A Z, absolute and relative), polygon,
 polyline, rect, circle, ellipse; `transform` on elements and nested groups
 (matrix, translate, scale, rotate, skewX, skewY).

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Inlay fit check: do the pocket and the plug, as verify simulates them, fit?
 
 Both programs are replayed by camcore.verify on a fine grid (FIT_RES). The plug is

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """camcore rotary-wizard MODEL.stl: a guided rotary-from-STL job (guide step 8C).
 
 Asks how the model lies on the axis, the stock, the tools and an accuracy

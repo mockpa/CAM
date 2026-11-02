@@ -2,6 +2,7 @@
 name = "camcore_verify_kernel"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-3.0-or-later"
 description = "Compiled inner loop of camcore.verify's stock model (heightmap and rotary radius map)"
 publish = false
 

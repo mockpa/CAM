@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """camcore-verify PROGRAM.ngc --machine machine.json [--tools tools.json] [--stock stock.json] [--view out.html]"""
 from __future__ import annotations
 

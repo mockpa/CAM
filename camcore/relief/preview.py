@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Shaded preview of a height field (relief plan phase 7): how the relief looks under a
 low light from the upper left, as an 8-bit grey image (row 0 = the back edge).
 Plain numpy, no Qt; the app's relief dialog shows it."""

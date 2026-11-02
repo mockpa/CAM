@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Virtual dry run: parse LinuxCNC G-code, replay it against a machine model
 and a stock model, and report anything that would hurt the real machine.
 

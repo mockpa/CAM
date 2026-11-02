@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from .profile import profile
 from .pocket import pocket
 from .vcarve import vcarve, vcarve_flat_bottom_area

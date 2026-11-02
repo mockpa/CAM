@@ -24,3 +24,13 @@ def test_every_source_file_has_the_spdx_header():
     assert files
     missing = [f for f in files if HEADER not in "".join((ROOT / f).read_text().splitlines(True)[:2])]
     assert missing == []
+
+
+def test_viewer_keeps_the_three_js_license_header():
+    """Generated *_view.html files embed three.js (MIT): its notice must travel with it."""
+    from camcore.viewer import render
+
+    page = render({"title": "t"})
+    assert "@license" in page
+    assert "Copyright 2010-2021 Three.js Authors" in page
+    assert "SPDX-License-Identifier: MIT" in page

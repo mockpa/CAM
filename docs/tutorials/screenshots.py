@@ -236,7 +236,7 @@ os.environ["CAMCORE_GUI_NO_WEBENGINE"] = "1"
 from pathlib import Path
 from PySide6.QtCore import QPoint, QRect
 from PySide6.QtGui import QPainter, QPixmap
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QPlainTextEdit, QTextEdit
 app = QApplication([])
 from camcore.gui.main_window import MainWindow
 from camcore.gui.wizard_dialog import WizardDialog
@@ -247,6 +247,30 @@ spec = json.loads(sys.argv[1])
 def settle():
     for _ in range(30):
         app.processEvents()
+
+# paths as a reader's checkout would show them: no local user name in the pictures
+SHOWN = [(os.getcwd(), "~/camcore"), (str(Path.home()), "~")]
+
+def neutral(text):
+    for real, shown in SHOWN:
+        text = text.replace(real, shown)
+    return text
+
+def neutralise(top):
+    """Rewrite every visible path under this checkout or the home folder."""
+    for e in top.findChildren(QLineEdit):
+        e.setText(neutral(e.text()))
+    for e in top.findChildren(QLabel):
+        e.setText(neutral(e.text()))
+        e.setToolTip(neutral(e.toolTip()))
+    for e in top.findChildren(QPlainTextEdit):
+        e.setPlainText(neutral(e.toPlainText()))
+    for e in top.findChildren(QTextEdit):
+        if e.toPlainText() != neutral(e.toPlainText()):
+            e.setPlainText(neutral(e.toPlainText()))
+    for e in top.findChildren(QComboBox):
+        for i in range(e.count()):
+            e.setItemText(i, neutral(e.itemText(i)))
 
 def viewer_rect(w):
     """Where the embedded viewer would be (below the caption row of the Viewer tab)."""
@@ -265,13 +289,13 @@ for shot in spec:
             else:
                 w.setText(value); w.textEdited.emit(value)
         d.resize(1150, 640)
-        d.show(); settle()
+        d.show(); settle(); neutralise(d); settle()
         d.grab().save(shot["png"])
         continue
     if shot.get("wizard"):
         d = WizardDialog(Path(shot["wizard"]), Path(shot["out"]))
         d.resize(760, d.sizeHint().height())
-        d.show(); settle()
+        d.show(); settle(); neutralise(d); settle()
         d.grab().save(shot["png"])
         continue
     w = MainWindow(shot["job"])
@@ -291,7 +315,7 @@ for shot in spec:
     if "viewer" in shot:
         w.viewer.label.setText(shot["caption"])
         w.viewer.open_btn.setEnabled(True)
-    settle()
+    settle(); neutralise(w); settle()
     pix = w.grab()
     if "viewer" in shot:
         r = viewer_rect(w)
